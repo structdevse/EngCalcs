@@ -656,6 +656,40 @@ select.status-select.status-superseded {
   border-color: var(--border);
 }
 
+/* The WYSIWYG contenteditable surface (src/richTextEditor.js) — reuses
+   .text-block-input's box/type styling above via the same class, this just
+   adds what a textarea didn't need: a min-height so an empty block stays
+   clickable (a textarea always had this from its rows attribute; a div
+   collapses to its content, which can be nothing), a focus ring (an
+   editable div has no native :focus outline of its own the way a textarea
+   or input does), and a CSS-only placeholder for when it's empty. */
+.rte-live {
+  min-height: 2.5rem;
+}
+
+.rte-live:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.rte-live:empty::before {
+  content: "Type calculations here... use the \0003a3 Math button for equations";
+  color: var(--text-muted);
+  font-family: "Patrick Hand", cursive;
+  font-size: 1rem;
+  pointer-events: none;
+}
+
+.rte-live math-field {
+  margin: 0 0.15em;
+  vertical-align: middle;
+}
+
+.rte-live math-field[data-display="block"] {
+  display: block;
+  margin: 0.5em 0;
+}
+
 .text-block-preview a {
   color: var(--accent);
   text-decoration: underline;
