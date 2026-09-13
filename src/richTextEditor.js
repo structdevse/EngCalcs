@@ -213,7 +213,12 @@ export function createRichTextEditor(
             }
           : null,
         onDelete: () => {
-          trigger.remove();
+          // Unwraps rather than removes — the trigger WORD stays in the
+          // text as ordinary content, only the tooltip behavior/popup
+          // goes away. Deleting the word itself, if that's what's wanted,
+          // is just normal editing (select it, press Delete) once it's
+          // plain text again.
+          trigger.replaceWith(document.createTextNode(trigger.textContent));
           handleInput();
         },
       }
@@ -543,8 +548,8 @@ function openTooltipPopup(
       const deleteBtn = document.createElement("button");
       deleteBtn.type = "button";
       deleteBtn.className = "rte-tooltip-popup-delete";
-      deleteBtn.textContent = "Delete";
-      deleteBtn.title = "Remove this tooltip entirely";
+      deleteBtn.textContent = "Remove Tooltip";
+      deleteBtn.title = "Remove the tooltip — the word itself stays as normal text";
       deleteBtn.addEventListener("click", () => {
         close();
         onDelete();
