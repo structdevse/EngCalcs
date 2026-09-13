@@ -168,6 +168,21 @@ state.on("sheetLoaded", () => {
   renderBlocks(els.blocksContainer);
 });
 
+// A linked tooltip's text can appear in any text block on the sheet, so
+// every block needs to re-render to pick up the change. Deferred (not
+// called synchronously from inside the state.setTooltip/createTooltip
+// call that triggers it): that call happens from within a tooltip popup's
+// own confirm handler, which still has more to do in the SAME block's own
+// (about-to-be-destroyed-and-rebuilt) DOM afterward — inserting the new
+// trigger span, calling handleInput(). Rebuilding immediately would tear
+// that DOM out from under the handler still running against it. A
+// zero-delay setTimeout defers the rebuild to the next task, after the
+// current synchronous work (including the state mutation that already
+// updated block.content correctly) has finished.
+state.on("tooltipsChanged", () => {
+  setTimeout(() => renderBlocks(els.blocksContainer), 0);
+});
+
 async function saveNow() {
   if (viewMode.isLocked()) return; // shared-link viewer — never writes back
   if (!storage.isReady()) return;

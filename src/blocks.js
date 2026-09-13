@@ -156,7 +156,13 @@ function renderBlock(block) {
             height: block.height,
           });
         },
-        { autoFocus: block.id === focusBlockId, readOnly }
+        {
+          autoFocus: block.id === focusBlockId,
+          readOnly,
+          tooltips: state.getTooltips(),
+          onCreateTooltip: (text) => state.createTooltip(text),
+          onUpdateTooltip: (id, text) => state.setTooltip(id, text),
+        }
       )
     );
   }

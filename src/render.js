@@ -65,9 +65,9 @@ function restoreEscapes(html, literals) {
 // MathLive-based editor, which speaks LaTeX natively) hands it to KaTeX
 // as-is. A block's format only ever changes by being re-saved through the
 // new editor, so old, untouched sheets keep rendering exactly as before.
-export function renderMathText(source, mathFormat = "asciimath") {
+export function renderMathText(source, mathFormat = "asciimath", tooltips = {}) {
   const { escaped, literals } = stripEscapes(source);
-  return restoreEscapes(renderMathTextInner(escaped, mathFormat, { n: 0, editable: false }), literals);
+  return restoreEscapes(renderMathTextInner(escaped, mathFormat, { n: 0, editable: false, tooltips }), literals);
 }
 
 // The WYSIWYG rich-text editor's counterpart to renderMathText: same markup
@@ -82,9 +82,9 @@ export function renderMathText(source, mathFormat = "asciimath") {
 // converting legacy AsciiMath to LaTeX once, at load time, via
 // asciiMathToLatexPublic below, since from this point on editing always
 // produces LaTeX.
-export function renderEditableHtml(source) {
+export function renderEditableHtml(source, tooltips = {}) {
   const { escaped, literals } = stripEscapes(source);
-  return restoreEscapes(renderMathTextInner(escaped, "latex", { n: 0, editable: true }), literals);
+  return restoreEscapes(renderMathTextInner(escaped, "latex", { n: 0, editable: true, tooltips }), literals);
 }
 
 // Exposed so richTextEditor.js can do the one-time AsciiMath→LaTeX
@@ -139,21 +139,6 @@ function editableMathTag(renderedHtml, latex, display) {
   );
 }
 
-// Finds every [trigger]{tooltip} occurrence directly in the raw, unrendered
-// source, in reading order, with each match's exact character range. Used
-// to locate the source text behind a rendered tooltip trigger (identified
-// by its data-tooltip-index) so it can be edited in place. Deliberately
-// requires a literal "{" right after "]" so [text](url) links never match.
-export function findTooltipRanges(source) {
-  const ranges = [];
-  const pattern = /\[([^\]]+)\]\{([^}]+)\}/g;
-  let match;
-  while ((match = pattern.exec(source)) !== null) {
-    ranges.push({ start: match.index, end: pattern.lastIndex, trigger: match[1], tooltip: match[2] });
-  }
-  return ranges;
-}
-
 function escapeForHtml(str) {
   return String(str)
     .replace(/&/g, "&amp;")
@@ -176,19 +161,30 @@ function applyInlineFormatting(escapedText, ctx) {
     return `<span class="text-fmt-${color}">${inner}</span>`;
   });
 
-  // [text](url) links and [text]{tooltip} tooltips share the same [text]
-  // prefix, so one pass handles both, branching on the delimiter that
-  // follows. Both are extracted to placeholder tokens first so the bare-URL
-  // auto-link pass below can't find and re-wrap a URL already inside one of
-  // these (which would produce a broken, nested <a><a>...</a></a>) — and so
-  // a link nested inside a tooltip isn't independently re-matched as its
-  // own top-level link.
+  // [text](url) links, [text]{tooltip} one-off tooltips, and
+  // [text]{{id}} linked tooltips (a reference into the sheet's shared
+  // tooltip library — see state.js's getTooltips/setTooltip) all share the
+  // same [text] prefix, so one pass handles all three, branching on the
+  // delimiter that follows. The double-brace alternative is tried before
+  // the single-brace one so {{id}} isn't instead matched as literal text
+  // "{id}" wrapped in an extra pair of braces. All three are extracted to
+  // placeholder tokens first so the bare-URL auto-link pass below can't
+  // find and re-wrap a URL already inside one of these (which would
+  // produce a broken, nested <a><a>...</a></a>) — and so a link nested
+  // inside a tooltip isn't independently re-matched as its own top-level
+  // link.
   const specials = [];
   html = html.replace(
-    /\[([^\]]+)\](?:\((https?:\/\/[^\s)]+)\)|\{([^}]+)\})/g,
-    (_m, text, url, tooltip) => {
+    /\[([^\]]+)\](?:\((https?:\/\/[^\s)]+)\)|\{\{([^}]+)\}\}|\{([^}]+)\})/g,
+    (_m, text, url, linkedId, tooltip) => {
       const token = `SPECIAL${specials.length}`;
-      specials.push(url !== undefined ? linkTag(url, text) : tooltipTag(text, tooltip, ctx));
+      if (url !== undefined) {
+        specials.push(linkTag(url, text));
+      } else if (linkedId !== undefined) {
+        specials.push(tooltipTag(text, linkedId, ctx, true));
+      } else {
+        specials.push(tooltipTag(text, tooltip, ctx, false));
+      }
       return token;
     }
   );
@@ -214,6 +210,13 @@ function linkTag(url, text) {
   return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${text}</a>`;
 }
 
+function escapeAttr(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/\n/g, "&#10;");
+}
+
 // The tooltip's own content is re-run through the full formatting pipeline
 // (recursively) — that's what lets a link typed inside a tooltip actually
 // become clickable, rather than sitting there as inert text. Bold/italic/
@@ -221,24 +224,44 @@ function linkTag(url, text) {
 // those passes already ran on the whole string before this one, since they
 // don't know or care about [] / {} boundaries.
 //
-// In editable mode, the tooltip's raw content is stashed in data-tooltip
-// (HTML-attribute-escaped, so quotes/newlines in the tooltip text can't
-// break out of the attribute) rather than rendered into a nested popup —
-// there's no hover in an editor, and richTextEditor.js's serializer reads
-// this attribute straight back out rather than walking rendered HTML.
-function tooltipTag(triggerText, tooltipRawContent, ctx) {
+// In editable mode, the tooltip's content is stashed in a data attribute
+// (HTML-attribute-escaped, so quotes/newlines can't break out of it)
+// rather than rendered into a nested popup — there's no hover in an
+// editor, and richTextEditor.js's serializer reads the attribute straight
+// back out rather than walking rendered HTML. A one-off tooltip's own text
+// lives in data-tooltip; a linked one instead carries data-tooltip-id
+// (its key into the sheet's shared tooltips library) with no private text
+// of its own — richTextEditor.js resolves the id to text on demand
+// (editing it, or just showing its current text) rather than baking a
+// stale copy into the DOM at render time.
+//
+// `ref` is either the literal tooltip text (isLinked false) or the shared
+// library id to look up in ctx.tooltips (isLinked true).
+function tooltipTag(triggerText, ref, ctx, isLinked) {
+  const resolvedText = isLinked ? (ctx.tooltips && ctx.tooltips[ref]) || "" : ref;
+
   if (ctx.editable) {
-    const safeTooltip = String(tooltipRawContent)
-      .replace(/&/g, "&amp;")
-      .replace(/"/g, "&quot;")
-      .replace(/\n/g, "&#10;");
+    if (isLinked) {
+      const safeResolved = escapeAttr(resolvedText);
+      return (
+        `<span class="text-tooltip-trigger" tabindex="0" data-tooltip-id="${ref}" ` +
+        `title="${safeResolved}" contenteditable="false">${triggerText}</span>`
+      );
+    }
+    const safeTooltip = escapeAttr(ref);
     return (
       `<span class="text-tooltip-trigger" tabindex="0" data-tooltip="${safeTooltip}" ` +
       `title="${safeTooltip}" contenteditable="false">${triggerText}</span>`
     );
   }
+
   const index = ctx.n++;
-  const tooltipHtml = applyInlineFormatting(tooltipRawContent, ctx);
+  // ref is already HTML-escaped in the literal case (it's a substring of
+  // text applyInlineFormatting received pre-escaped) — the linked case's
+  // resolvedText comes straight from the tooltip library instead, raw, so
+  // it needs that same escaping applied here before formatting runs on it.
+  const tooltipSource = isLinked ? escapeForHtml(resolvedText) : ref;
+  const tooltipHtml = applyInlineFormatting(tooltipSource, ctx);
   return (
     `<span class="text-tooltip-trigger" tabindex="0" data-tooltip-index="${index}">${triggerText}` +
     `<span class="text-tooltip-popup">${tooltipHtml}</span></span>`

@@ -26,14 +26,18 @@ import { renderEditableHtml, asciiMathToLatexPublic, TEXT_COLOR_NAMES } from "./
 // on every edit. Nothing about the stored format, Drive files, print view,
 // or read-only rendering changes — see render.js's mathFormat comment for
 // how existing AsciiMath sheets keep working untouched.
-export function createRichTextEditor(block, onChange) {
+export function createRichTextEditor(
+  block,
+  onChange,
+  { tooltips = {}, onCreateTooltip, onUpdateTooltip } = {}
+) {
   const editor = document.createElement("div");
   editor.className = "rte-editor";
   editor.contentEditable = "true";
   editor.spellcheck = true;
 
   migrateLegacyMath(block);
-  editor.innerHTML = block.content ? renderEditableHtml(block.content) : "";
+  editor.innerHTML = block.content ? renderEditableHtml(block.content, tooltips) : "";
 
   // Enter creates a plain <br> line break rather than a browser-default
   // wrapper (a fresh <div> per line in Chrome) — much simpler to round-trip
@@ -114,6 +118,14 @@ export function createRichTextEditor(block, onChange) {
     });
   }
 
+  // Every tooltip created here — whether typed fresh or picked from the
+  // "link to existing" list — becomes a reference into the sheet's shared
+  // tooltip library (state.js's getTooltips/setTooltip, threaded in as
+  // `tooltips` + onCreateTooltip/onUpdateTooltip) rather than owning
+  // private text. That's deliberate, not just for triggers the user
+  // explicitly wants shared: it's what makes ANY tooltip available to link
+  // to later from somewhere else — one created as an apparent one-off is
+  // exactly as linkable afterward as one created via "link to existing."
   function insertTooltip() {
     const sel = window.getSelection();
     if (sel.isCollapsed) {
@@ -124,27 +136,32 @@ export function createRichTextEditor(block, onChange) {
     if (!editor.contains(range.commonAncestorContainer)) return;
     const savedRange = range.cloneRange();
     const selectedText = savedRange.toString();
-    openTooltipPopup(selectedText, "", (triggerText, tooltipText) => {
-      const span = document.createElement("span");
-      span.className = "text-tooltip-trigger";
-      span.tabIndex = 0;
-      span.contentEditable = "false";
-      span.dataset.tooltip = tooltipText;
-      span.title = tooltipText;
-      span.textContent = triggerText;
-      savedRange.deleteContents();
-      savedRange.insertNode(span);
-      handleInput();
-      focusEditor();
-    });
+    openTooltipPopup(
+      { triggerText: selectedText, tooltipText: "", isLinked: false, tooltips },
+      {
+        onConfirm: ({ triggerText, mode, tooltipText, tooltipId }) => {
+          const id = mode === "link" ? tooltipId : onCreateTooltip(tooltipText);
+          const span = buildTooltipSpan(triggerText, id, tooltips);
+          savedRange.deleteContents();
+          savedRange.insertNode(span);
+          handleInput();
+          focusEditor();
+        },
+      }
+    );
   }
 
   // Double-clicking an existing tooltip reopens it in the tooltip popup,
-  // pre-filled with both its trigger text and tooltip content — the
+  // pre-filled with its trigger text and current tooltip content — the
   // trigger itself is contenteditable=false (a single atomic unit, not
   // inline-editable character-by-character), so this is the only way to
-  // change one after it's created. Double-clicking an equation reopens it
-  // in the math popup the same way.
+  // change one after it's created. A tooltip from a sheet saved before
+  // linking existed (data-tooltip, private text, no data-tooltip-id) gets
+  // promoted into the shared library the moment it's edited here — the
+  // same one-time-upgrade-on-touch pattern migrateLegacyMath uses for
+  // AsciiMath, just per-tooltip instead of per-block since each one is
+  // individually addressable. Double-clicking an equation reopens it in
+  // the math popup the same way.
   editor.addEventListener("dblclick", (evt) => {
     const mathSpan = evt.target.closest(".rte-math");
     if (mathSpan) {
@@ -159,12 +176,39 @@ export function createRichTextEditor(block, onChange) {
     const trigger = evt.target.closest(".text-tooltip-trigger");
     if (!trigger) return;
     evt.preventDefault();
-    openTooltipPopup(trigger.textContent, trigger.dataset.tooltip || "", (triggerText, tooltipText) => {
-      trigger.textContent = triggerText;
-      trigger.dataset.tooltip = tooltipText;
-      trigger.title = tooltipText;
-      handleInput();
-    });
+    const isLinked = !!trigger.dataset.tooltipId;
+    const currentTooltipText = isLinked
+      ? tooltips[trigger.dataset.tooltipId] || ""
+      : trigger.dataset.tooltip || "";
+    openTooltipPopup(
+      { triggerText: trigger.textContent, tooltipText: currentTooltipText, isLinked, tooltips },
+      {
+        onConfirm: ({ triggerText, mode, tooltipText, tooltipId }) => {
+          trigger.textContent = triggerText;
+          let finalId;
+          if (mode === "link") {
+            finalId = tooltipId;
+          } else if (isLinked) {
+            onUpdateTooltip(trigger.dataset.tooltipId, tooltipText);
+            finalId = trigger.dataset.tooltipId;
+          } else {
+            finalId = onCreateTooltip(tooltipText);
+          }
+          trigger.dataset.tooltipId = finalId;
+          delete trigger.dataset.tooltip;
+          trigger.title = tooltips[finalId] || tooltipText;
+          handleInput();
+        },
+        onUnlink: isLinked
+          ? () => {
+              const newId = onCreateTooltip(currentTooltipText);
+              trigger.dataset.tooltipId = newId;
+              trigger.title = currentTooltipText;
+              handleInput();
+            }
+          : null,
+      }
+    );
   });
 
   function insertMath() {
@@ -233,6 +277,17 @@ function buildMathSpan(latex, display) {
   span.dataset.latex = latex;
   span.dataset.display = display ? "block" : "inline";
   renderMathSpanContent(span);
+  return span;
+}
+
+function buildTooltipSpan(triggerText, tooltipId, tooltips) {
+  const span = document.createElement("span");
+  span.className = "text-tooltip-trigger";
+  span.tabIndex = 0;
+  span.contentEditable = "false";
+  span.dataset.tooltipId = tooltipId;
+  span.title = (tooltips && tooltips[tooltipId]) || "";
+  span.textContent = triggerText;
   return span;
 }
 
@@ -330,15 +385,30 @@ function openMathPopup(initialLatex, onConfirm) {
   });
 }
 
-// A popup for creating/editing a tooltip's trigger text and tooltip
-// content — replaces two sequential prompt() calls, whose single-line
-// inputs visually truncate anything longer than the dialog's width with no
-// way to see the rest without it (the underlying value was always
-// complete; the native dialog just couldn't display it). A real textarea
-// here shows and wraps the full text properly. onConfirm(triggerText,
-// tooltipText) fires only if both fields end up non-empty; Cancel/Escape/
-// clicking the backdrop all just close it with no callback.
-function openTooltipPopup(initialTrigger, initialTooltip, onConfirm) {
+// A popup for creating/editing a tooltip's trigger text and content —
+// replaces two sequential prompt() calls, whose single-line inputs
+// visually truncate anything longer than the dialog's width with no way
+// to see the rest without it (the underlying value was always complete;
+// the native dialog just couldn't display it). A real textarea here shows
+// and wraps the full text properly.
+//
+// When existing tooltips are available (tooltips is non-empty), a mode
+// toggle lets the user either type new text or pick one of those to link
+// to instead — see the comment on insertTooltip() above for why every
+// tooltip, not just ones explicitly marked shared, ends up linkable.
+// isLinked (true when editing an already-linked trigger) adds an Unlink
+// button that detaches just this one instance into its own independent
+// (but still library-backed) entry, leaving the shared one and every
+// other trigger still pointing at it untouched.
+//
+// callbacks.onConfirm({ triggerText, mode: "text", tooltipText } |
+// { triggerText, mode: "link", tooltipId }) fires on a valid confirm;
+// callbacks.onUnlink() fires only from the Unlink button. Cancel/Escape/
+// clicking the backdrop just close it with no callback either way.
+function openTooltipPopup({ triggerText = "", tooltipText = "", isLinked = false, tooltips = {} }, callbacks) {
+  const { onConfirm, onUnlink } = callbacks;
+  const tooltipEntries = Object.entries(tooltips);
+
   const overlay = document.createElement("div");
   overlay.className = "rte-math-popup-overlay";
 
@@ -354,8 +424,37 @@ function openTooltipPopup(initialTrigger, initialTooltip, onConfirm) {
   const triggerInput = document.createElement("input");
   triggerInput.type = "text";
   triggerInput.className = "rte-tooltip-popup-input";
-  triggerInput.value = initialTrigger;
+  triggerInput.value = triggerText;
   box.appendChild(triggerInput);
+
+  let mode = "text";
+
+  if (tooltipEntries.length > 0) {
+    const modeRow = document.createElement("div");
+    modeRow.className = "rte-tooltip-popup-mode-row";
+
+    const textLabel = document.createElement("label");
+    const textRadio = document.createElement("input");
+    textRadio.type = "radio";
+    textRadio.name = "rte-tooltip-mode";
+    textRadio.checked = true;
+    textLabel.appendChild(textRadio);
+    textLabel.append(" Type tooltip text");
+
+    const linkLabel = document.createElement("label");
+    const linkRadio = document.createElement("input");
+    linkRadio.type = "radio";
+    linkRadio.name = "rte-tooltip-mode";
+    linkLabel.appendChild(linkRadio);
+    linkLabel.append(" Link to existing tooltip");
+
+    modeRow.appendChild(textLabel);
+    modeRow.appendChild(linkLabel);
+    box.appendChild(modeRow);
+
+    textRadio.addEventListener("change", () => setMode("text"));
+    linkRadio.addEventListener("change", () => setMode("link"));
+  }
 
   const tooltipLabel = document.createElement("div");
   tooltipLabel.className = "rte-math-popup-label rte-tooltip-popup-second-label";
@@ -365,18 +464,50 @@ function openTooltipPopup(initialTrigger, initialTooltip, onConfirm) {
   const tooltipInput = document.createElement("textarea");
   tooltipInput.className = "rte-tooltip-popup-textarea";
   tooltipInput.rows = 4;
-  tooltipInput.value = initialTooltip;
+  tooltipInput.value = tooltipText;
   box.appendChild(tooltipInput);
+
+  const linkSelect = document.createElement("select");
+  linkSelect.className = "rte-tooltip-popup-select";
+  linkSelect.hidden = true;
+  tooltipEntries.forEach(([id, text]) => {
+    const opt = document.createElement("option");
+    opt.value = id;
+    opt.textContent = text.length > 70 ? `${text.slice(0, 70)}…` : text;
+    linkSelect.appendChild(opt);
+  });
+  box.appendChild(linkSelect);
+
+  function setMode(next) {
+    mode = next;
+    tooltipLabel.hidden = mode === "link";
+    tooltipInput.hidden = mode === "link";
+    linkSelect.hidden = mode === "text";
+  }
 
   const buttonRow = document.createElement("div");
   buttonRow.className = "rte-math-popup-buttons";
+
+  if (isLinked && onUnlink) {
+    const unlinkBtn = document.createElement("button");
+    unlinkBtn.type = "button";
+    unlinkBtn.className = "rte-tooltip-popup-unlink";
+    unlinkBtn.textContent = "Unlink";
+    unlinkBtn.title = "Make this one instance independent — won't update when the shared tooltip changes anymore";
+    unlinkBtn.addEventListener("click", () => {
+      close();
+      onUnlink();
+    });
+    buttonRow.appendChild(unlinkBtn);
+  }
+
   const cancelBtn = document.createElement("button");
   cancelBtn.type = "button";
   cancelBtn.textContent = "Cancel";
   const confirmBtn = document.createElement("button");
   confirmBtn.type = "button";
   confirmBtn.className = "primary";
-  confirmBtn.textContent = initialTooltip ? "Update" : "Insert";
+  confirmBtn.textContent = tooltipText || isLinked ? "Update" : "Insert";
   buttonRow.appendChild(cancelBtn);
   buttonRow.appendChild(confirmBtn);
   box.appendChild(buttonRow);
@@ -390,12 +521,21 @@ function openTooltipPopup(initialTrigger, initialTooltip, onConfirm) {
     if (evt.target === overlay) close();
   });
   confirmBtn.addEventListener("click", () => {
-    const triggerText = triggerInput.value.trim();
-    const tooltipText = tooltipInput.value.trim();
-    close();
-    if (triggerText && tooltipText) onConfirm(triggerText, tooltipText);
+    const finalTrigger = triggerInput.value.trim();
+    if (!finalTrigger) return;
+    if (mode === "link") {
+      const id = linkSelect.value;
+      if (!id) return;
+      close();
+      onConfirm({ triggerText: finalTrigger, mode: "link", tooltipId: id });
+    } else {
+      const text = tooltipInput.value.trim();
+      if (!text) return;
+      close();
+      onConfirm({ triggerText: finalTrigger, mode: "text", tooltipText: text });
+    }
   });
-  // Escape cancels from either field; Enter in the (single-line) trigger
+  // Escape cancels from any field; Enter in the (single-line) trigger
   // field just moves to the tooltip textarea rather than submitting, since
   // Enter inside the textarea itself needs to insert a real newline.
   triggerInput.addEventListener("keydown", (evt) => {
@@ -443,8 +583,12 @@ function serializeChild(child) {
     return child.dataset.display === "block" ? `$$${latex}$$` : `$${latex}$`;
   }
   if (child.classList && child.classList.contains("text-tooltip-trigger")) {
+    const triggerText = escapeMarkupChars(child.textContent);
+    if (child.dataset.tooltipId) {
+      return `[${triggerText}]{{${child.dataset.tooltipId}}}`;
+    }
     const tooltip = child.dataset.tooltip || "";
-    return `[${escapeMarkupChars(child.textContent)}]{${tooltip}}`;
+    return `[${triggerText}]{${tooltip}}`;
   }
   for (const color of TEXT_COLOR_NAMES) {
     if (child.classList && child.classList.contains(`text-fmt-${color}`)) {

@@ -27,7 +27,11 @@ function applyFontClass(el, font) {
 // Pass autoFocus for a freshly-added block so it opens ready to type. Pass
 // readOnly (formal view / shared-link viewer) to render only the static
 // preview — no contenteditable at all.
-export function createTextBlock(block, onChange, { autoFocus = false, readOnly = false } = {}) {
+export function createTextBlock(
+  block,
+  onChange,
+  { autoFocus = false, readOnly = false, tooltips = {}, onCreateTooltip, onUpdateTooltip } = {}
+) {
   const wrap = document.createElement("div");
   wrap.className = "text-block";
 
@@ -35,17 +39,21 @@ export function createTextBlock(block, onChange, { autoFocus = false, readOnly =
     const preview = document.createElement("div");
     preview.className = "text-block-preview formal";
     applyFontClass(preview, block.font);
-    preview.innerHTML = block.content ? renderMathText(block.content, block.mathFormat) : "";
+    preview.innerHTML = block.content ? renderMathText(block.content, block.mathFormat, tooltips) : "";
     wireTooltipPopups(preview);
     wrap.appendChild(preview);
     return wrap;
   }
 
-  const rte = createRichTextEditor(block, (content) => {
-    if (content !== undefined) block.content = content;
-    autoGrow();
-    onChange(block.content);
-  });
+  const rte = createRichTextEditor(
+    block,
+    (content) => {
+      if (content !== undefined) block.content = content;
+      autoGrow();
+      onChange(block.content);
+    },
+    { tooltips, onCreateTooltip, onUpdateTooltip }
+  );
   const editorEl = rte.element;
   editorEl.classList.add("text-block-input", "rte-live");
 

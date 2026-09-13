@@ -7,6 +7,7 @@ const listeners = {
   sheetChanged: [],   // sheet content mutated (blocks/title/tags/status)
   sheetLoaded: [],     // a whole new sheet became current
   driveFileId: [],     // the sheet's Drive file id changed (first save)
+  tooltipsChanged: [], // the shared tooltip library changed (app.js re-renders every block, since a linked tooltip's text can appear in any of them)
 };
 
 let current = null;    // the in-memory sheet object
@@ -34,6 +35,7 @@ export function newSheet(title = "Untitled sheet") {
     tags: [],
     linkedSheets: [],
     blocks: [],
+    tooltips: {}, // shared tooltip library — { [id]: text }, see setTooltip/getTooltips
   };
   currentFileId = null;
   emit("sheetLoaded", current);
@@ -111,4 +113,29 @@ export function moveBlock(blockId, toIndex) {
   const [block] = current.blocks.splice(fromIndex, 1);
   current.blocks.splice(toIndex, 0, block);
   touch();
+}
+
+// Shared tooltip library, scoped to this sheet — a linked tooltip trigger
+// (anywhere in any text block) stores an id referencing an entry here
+// instead of its own private text, so editing the entry updates every
+// trigger that links to it. A sheet saved before this feature existed has
+// no `tooltips` field at all; lazily creating it here (rather than only in
+// newSheet()) means an old, freshly-loaded sheet still works correctly the
+// first time a tooltip is linked in it.
+export function getTooltips() {
+  if (!current.tooltips) current.tooltips = {};
+  return current.tooltips;
+}
+
+export function setTooltip(id, text) {
+  getTooltips()[id] = text;
+  current.modified = nowIso();
+  emit("sheetChanged", current);
+  emit("tooltipsChanged", current);
+}
+
+export function createTooltip(text) {
+  const id = uuid();
+  setTooltip(id, text);
+  return id;
 }
