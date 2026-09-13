@@ -680,14 +680,87 @@ select.status-select.status-superseded {
   pointer-events: none;
 }
 
-.rte-live math-field {
+/* A rendered equation in the editor — static (not directly editable in
+   place; see the comment at the top of richTextEditor.js for why),
+   double-click to reopen it in the math popup. The dashed outline is the
+   discoverability cue that it's clickable, since KaTeX's own rendering
+   gives no visual hint on its own. */
+.rte-live .rte-math {
   margin: 0 0.15em;
+  padding: 0.1em 0.3em;
   vertical-align: middle;
+  cursor: pointer;
+  border: 1px dashed transparent;
+  border-radius: 4px;
 }
 
-.rte-live math-field[data-display="block"] {
+.rte-live .rte-math:hover {
+  border-color: var(--border);
+}
+
+.rte-live .rte-math[data-display="block"] {
   display: block;
   margin: 0.5em 0;
+}
+
+.rte-math-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.rte-math-popup {
+  background: var(--bg-page);
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 1.25rem;
+  min-width: 320px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
+.rte-math-popup-label {
+  font-family: "Patrick Hand", cursive;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.rte-math-popup-field {
+  display: block;
+  width: 100%;
+  min-height: 2.5rem;
+  font-size: 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem;
+  box-sizing: border-box;
+}
+
+.rte-math-popup-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.rte-math-popup-buttons button {
+  font-family: "Patrick Hand", cursive;
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-header);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.rte-math-popup-buttons button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
 }
 
 .text-block-preview a {

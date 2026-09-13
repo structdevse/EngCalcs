@@ -105,18 +105,15 @@ function renderMathTextInner(source, mathFormat, ctx) {
     result += applyInlineFormatting(escapeForHtml(source.slice(lastIndex, match.index)), ctx);
     const display = match[1] !== undefined;
     const mathSource = display ? match[1] : match[2];
-    if (ctx.editable) {
-      result += mathFieldTag(mathSource, display);
-    } else {
-      const latex = mathFormat === "latex" ? mathSource : asciiMathToLatex(mathSource);
-      try {
-        result += window.katex.renderToString(latex, {
-          throwOnError: false,
-          displayMode: display,
-        });
-      } catch (e) {
-        result += escapeForHtml(match[0]);
-      }
+    // editable mode always treats mathSource as LaTeX (see the comment on
+    // renderEditableHtml below); read-only mode still respects the block's
+    // own stored mathFormat.
+    const latex = ctx.editable || mathFormat === "latex" ? mathSource : asciiMathToLatex(mathSource);
+    try {
+      const rendered = window.katex.renderToString(latex, { throwOnError: false, displayMode: display });
+      result += ctx.editable ? editableMathTag(rendered, latex, display) : rendered;
+    } catch (e) {
+      result += escapeForHtml(match[0]);
     }
     lastIndex = pattern.lastIndex;
   }
@@ -124,9 +121,22 @@ function renderMathTextInner(source, mathFormat, ctx) {
   return result;
 }
 
-function mathFieldTag(latex, display) {
-  const safeLatex = escapeForHtml(latex).replace(/\n/g, ""); // <br> from escapeForHtml would corrupt LaTeX source
-  return `<math-field data-display="${display ? "block" : "inline"}" contenteditable="false">${safeLatex}</math-field>`;
+// A math span in the editor renders live (via KaTeX, same as the read-only
+// view) rather than as an editable MathLive <math-field> the way an
+// earlier version of this did — MathLive's keyboard capture turns out not
+// to work at all when nested inside a native contenteditable ancestor
+// (confirmed: a standalone field works, this exact field embedded here
+// does not — a documented MathLive/contenteditable incompatibility, not a
+// bug fixable with a quick patch). Clicking it instead opens an isolated
+// math-field in a popup (richTextEditor.js's openMathPopup, mounted
+// outside the contenteditable tree, where MathLive works correctly) to
+// edit the LaTeX, then re-renders this same static display on confirm.
+function editableMathTag(renderedHtml, latex, display) {
+  const safeLatex = latex.replace(/"/g, "&quot;").replace(/\n/g, "&#10;");
+  return (
+    `<span class="rte-math" data-latex="${safeLatex}" data-display="${display ? "block" : "inline"}" ` +
+    `contenteditable="false" tabindex="0">${renderedHtml}</span>`
+  );
 }
 
 // Finds every [trigger]{tooltip} occurrence directly in the raw, unrendered

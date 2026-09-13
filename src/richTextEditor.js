@@ -2,11 +2,21 @@ import { renderEditableHtml, asciiMathToLatexPublic, TEXT_COLOR_NAMES } from "./
 
 // A true WYSIWYG editor for text blocks: a single contenteditable surface
 // that IS the rendered view (bold looks bold as you type, a tooltip looks
-// like a tooltip, an equation is a live MathLive <math-field> widget) —
-// there's no separate raw-markup textarea and no toggle between "editing"
-// and "viewing" the way the old textarea+preview implementation had. That
+// like a tooltip, an equation renders live via KaTeX) — there's no
+// separate raw-markup textarea and no toggle between "editing" and
+// "viewing" the way the old textarea+preview implementation had. That
 // split existed because a plain textarea can't render anything; a
 // contenteditable can, so editing and viewing collapse into one surface.
+//
+// Math is the one exception to "directly editable in place": clicking an
+// equation opens it in a small popup (openMathPopup below) containing an
+// isolated MathLive <math-field>, rather than embedding the math-field
+// directly inline. That's not a stylistic choice — MathLive's keyboard
+// capture turns out not to work at all when the field is nested inside a
+// native contenteditable ancestor (confirmed directly: an identical field
+// standalone accepts typing fine, embedded here it doesn't — a documented
+// MathLive/contenteditable incompatibility). The popup's field lives
+// outside the contenteditable tree entirely, where it works correctly.
 //
 // block.content still stores the exact same markup string format as
 // before (**bold**, {color}...{/color}, [text](url), [text]{tooltip},
@@ -24,13 +34,6 @@ export function createRichTextEditor(block, onChange) {
 
   migrateLegacyMath(block);
   editor.innerHTML = block.content ? renderEditableHtml(block.content) : "";
-  // Deferred: a math-field needs to actually be connected to the document
-  // before its menuItems can be set (throws "Mathfield not mounted"
-  // otherwise), and `editor` itself isn't connected yet at this point —
-  // createRichTextEditor() only builds the element here, the caller
-  // (textBlock.js) appends it to the page afterward. One frame is enough
-  // for that append to have already happened.
-  requestAnimationFrame(() => disableMathFieldMenus(editor));
 
   // Enter creates a plain <br> line break rather than a browser-default
   // wrapper (a fresh <div> per line in Chrome) — much simpler to round-trip
@@ -133,8 +136,19 @@ export function createRichTextEditor(block, onChange) {
   // Double-clicking an existing tooltip re-prompts for both its trigger
   // text and tooltip content — the trigger itself is contenteditable=false
   // (a single atomic unit, not inline-editable character-by-character),
-  // so this is the only way to change one after it's created.
+  // so this is the only way to change one after it's created. Double-
+  // clicking an equation reopens it in the math popup, pre-filled.
   editor.addEventListener("dblclick", (evt) => {
+    const mathSpan = evt.target.closest(".rte-math");
+    if (mathSpan) {
+      evt.preventDefault();
+      openMathPopup(mathSpan.dataset.latex || "", (latex) => {
+        mathSpan.dataset.latex = latex;
+        renderMathSpanContent(mathSpan);
+        handleInput();
+      });
+      return;
+    }
     const trigger = evt.target.closest(".text-tooltip-trigger");
     if (!trigger) return;
     evt.preventDefault();
@@ -149,26 +163,21 @@ export function createRichTextEditor(block, onChange) {
   });
 
   function insertMath() {
-    focusEditor();
-    const field = document.createElement("math-field");
-    field.setAttribute("contenteditable", "false");
-    field.dataset.display = "inline";
     const sel = window.getSelection();
-    if (sel.rangeCount && editor.contains(sel.getRangeAt(0).commonAncestorContainer)) {
-      const range = sel.getRangeAt(0);
-      range.deleteContents();
-      range.insertNode(field);
-    } else {
-      editor.appendChild(field);
-    }
-    handleInput();
-    // math-field manages its own internal focus/cursor — hand off to it
-    // once it's actually mounted and upgraded, not synchronously. Setting
-    // menuItems requires the element to already be connected to the DOM
-    // too, hence both happen in here rather than right after creation.
-    requestAnimationFrame(() => {
-      disableMathFieldMenu(field);
-      field.focus();
+    const range =
+      sel.rangeCount && editor.contains(sel.getRangeAt(0).commonAncestorContainer)
+        ? sel.getRangeAt(0).cloneRange()
+        : null;
+    openMathPopup("", (latex) => {
+      const span = buildMathSpan(latex, false);
+      if (range) {
+        range.deleteContents();
+        range.insertNode(span);
+      } else {
+        editor.appendChild(span);
+      }
+      handleInput();
+      focusEditor();
     });
   }
 
@@ -207,24 +216,107 @@ function migrateLegacyMath(block) {
   block.mathFormat = "latex";
 }
 
-// MathLive's built-in menu button visually fills almost the entire field
-// while it's empty (or even once it has content, in the corner) — its
-// click target ends up covering the whole field, which both pops a Copy/
-// Select-All context menu on click AND swallows the click that would
-// otherwise place a text cursor there for typing. Disabling it fixes both:
-// a plain click focuses the field normally, the way typing into any other
-// field is expected to work.
-function disableMathFieldMenu(field) {
+// Builds a static, non-editable rendered-math span matching what
+// render.js's editableMathTag produces as an HTML string — used here when
+// constructing one directly as DOM (a fresh insert, rather than parsed
+// from block.content on load).
+function buildMathSpan(latex, display) {
+  const span = document.createElement("span");
+  span.className = "rte-math";
+  span.contentEditable = "false";
+  span.tabIndex = 0;
+  span.dataset.latex = latex;
+  span.dataset.display = display ? "block" : "inline";
+  renderMathSpanContent(span);
+  return span;
+}
+
+function renderMathSpanContent(span) {
+  const latex = span.dataset.latex || "";
+  const display = span.dataset.display === "block";
+  if (!window.katex) {
+    span.textContent = latex;
+    return;
+  }
   try {
-    field.menuItems = [];
+    span.innerHTML = window.katex.renderToString(latex, { throwOnError: false, displayMode: display });
   } catch (e) {
-    // Not yet connected/upgraded — disableMathFieldMenus (plural, below)
-    // covers the load-time case where multiple fields exist at once.
+    span.textContent = latex;
   }
 }
 
-function disableMathFieldMenus(root) {
-  root.querySelectorAll("math-field").forEach(disableMathFieldMenu);
+// A small popup holding one isolated MathLive field — isolated meaning
+// appended to document.body, deliberately outside any contenteditable
+// ancestor, which is what makes typing into it actually work (see the
+// comment at the top of this file). onConfirm(latex) fires only if the
+// user confirms with non-empty content; Cancel/Escape/clicking the
+// backdrop all just close it with no callback.
+function openMathPopup(initialLatex, onConfirm) {
+  const overlay = document.createElement("div");
+  overlay.className = "rte-math-popup-overlay";
+
+  const box = document.createElement("div");
+  box.className = "rte-math-popup";
+  overlay.appendChild(box);
+
+  const label = document.createElement("div");
+  label.className = "rte-math-popup-label";
+  label.textContent = "Type your equation:";
+  box.appendChild(label);
+
+  const field = document.createElement("math-field");
+  field.className = "rte-math-popup-field";
+  box.appendChild(field);
+
+  const buttonRow = document.createElement("div");
+  buttonRow.className = "rte-math-popup-buttons";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.textContent = "Cancel";
+  const confirmBtn = document.createElement("button");
+  confirmBtn.type = "button";
+  confirmBtn.className = "primary";
+  confirmBtn.textContent = initialLatex ? "Update" : "Insert";
+  buttonRow.appendChild(cancelBtn);
+  buttonRow.appendChild(confirmBtn);
+  box.appendChild(buttonRow);
+
+  function close() {
+    overlay.remove();
+  }
+
+  cancelBtn.addEventListener("click", close);
+  overlay.addEventListener("mousedown", (evt) => {
+    if (evt.target === overlay) close();
+  });
+  confirmBtn.addEventListener("click", () => {
+    const latex = field.value || "";
+    close();
+    if (latex) onConfirm(latex);
+  });
+  field.addEventListener("keydown", (evt) => {
+    if (evt.key === "Enter" && !evt.shiftKey) {
+      evt.preventDefault();
+      confirmBtn.click();
+    } else if (evt.key === "Escape") {
+      evt.preventDefault();
+      close();
+    }
+  });
+
+  document.body.appendChild(overlay);
+  // Deferred: the field needs to be connected before .menuItems/.value can
+  // be set (throws "Mathfield not mounted" otherwise) — see the identical
+  // note this replaced further up in this file's history.
+  requestAnimationFrame(() => {
+    try {
+      field.menuItems = [];
+    } catch (e) {
+      // ignore — cosmetic only, not worth failing the popup over
+    }
+    if (initialLatex) field.value = initialLatex;
+    field.focus();
+  });
 }
 
 function escapeMarkupChars(text) {
@@ -251,8 +343,8 @@ function serializeChild(child) {
   if (tag === "EM" || tag === "I") return `*${serializeNode(child)}*`;
   if (tag === "U") return `__${serializeNode(child)}__`;
   if (tag === "A") return `[${serializeNode(child)}](${child.getAttribute("href") || ""})`;
-  if (tag === "MATH-FIELD") {
-    const latex = child.value || "";
+  if (child.classList && child.classList.contains("rte-math")) {
+    const latex = child.dataset.latex || "";
     return child.dataset.display === "block" ? `$$${latex}$$` : `$${latex}$`;
   }
   if (child.classList && child.classList.contains("text-tooltip-trigger")) {
