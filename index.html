@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Engineering Notebook</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Patrick+Hand&display=swap"
+  rel="stylesheet"
+/>
+
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
+/>
+<script
+  defer
+  src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"
+></script>
+
+<script src="https://unpkg.com/roughjs@4.6.6/bundled/rough.js"></script>
+<script src="https://unpkg.com/asciimath2tex@1.2.1/dist/asciimath2tex.umd.js"></script>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<link rel="stylesheet" href="styles/app.css" />
+<link rel="stylesheet" media="print" href="styles/print.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="app-header">
+      <button id="sidebar-toggle" title="Toggle sidebar">☰</button>
+      <input id="title-input" class="title-input" placeholder="Untitled sheet" />
+      <div id="formal-meta" class="formal-meta"></div>
+      <div id="status-slot"></div>
+      <div id="tags-slot"></div>
+      <div class="header-spacer"></div>
+      <span id="storage-mode-badge" class="storage-mode-badge"></span>
+      <span id="save-indicator" class="save-indicator"></span>
+      <button id="export-btn" class="header-btn" title="Download this sheet as a JSON file">Export</button>
+      <button id="import-btn" class="header-btn" title="Open a sheet from a JSON file">Import</button>
+      <input id="import-file-input" type="file" accept="application/json" hidden />
+      <button id="view-toggle" class="header-btn" title="Switch between notebook and formal document view">Formal view</button>
+      <button id="print-btn" class="header-btn" title="Print or save as PDF">Print</button>
+      <button id="darkmode-toggle" title="Toggle dark mode">🌙</button>
+      <button id="signin-btn" class="signin-btn">Sign in with Google</button>
+    </header>
+
+    <div id="app-body">
+      <aside id="sidebar">
+        <div id="sidebar-header">
+          <button id="new-sheet-btn">+ New sheet</button>
+        </div>
+        <div id="file-browser"></div>
+      </aside>
+
+      <main id="page">
+        <div class="page-margin-line"></div>
+        <div class="page-watermark" id="watermark"></div>
+        <div id="blocks-container"></div>
+      </main>
+    </div>
+  </div>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

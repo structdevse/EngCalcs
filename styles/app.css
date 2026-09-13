@@ -1,0 +1,1063 @@
+:root {
+  --bg-app: #f2f1ec;
+  --bg-header: #ffffff;
+  --bg-sidebar: #f7f6f1;
+  --bg-page: #fdfaf4;
+  --grid-line: rgba(160, 190, 220, 0.35);
+  --margin-line: rgba(220, 150, 150, 0.55);
+  --ink: #2b2b2b;
+  --border: #ddd8c8;
+  --accent: #3a6ea5;
+  --text-muted: #6b6f76;
+  --hover-bg: rgba(58, 110, 165, 0.08);
+
+  --status-draft: #6b7280;
+  --status-checked: #2a6e4a;
+  --status-superseded: #c05050;
+
+  /* Text formatting colors (same values as the sketch color palette, for
+     visual consistency across the app). Blue reuses --accent directly. */
+  --text-red: #c05050;
+  --text-purple: #7733aa;
+  --text-green: #2a6e4a;
+  --text-gray: #5c6b7a;
+
+  --sidebar-width: 280px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-app: #14171c;
+    --bg-header: #1a1e24;
+    --bg-sidebar: #171b21;
+    --bg-page: #1c2128;
+    --grid-line: rgba(120, 150, 190, 0.28);
+    --margin-line: rgba(210, 130, 130, 0.45);
+    --ink: #e8e6df;
+    --border: #2c333d;
+    --accent: #7fb2e5;
+    --text-muted: #9aa2ab;
+    --hover-bg: rgba(127, 178, 229, 0.1);
+
+    --status-draft: #9aa2ab;
+    --status-checked: #6fcf9a;
+    --status-superseded: #e88787;
+
+    --text-red: #e88787;
+    --text-purple: #c79bef;
+    --text-green: #6fcf9a;
+    --text-gray: #a9b8c6;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg-app: #14171c;
+  --bg-header: #1a1e24;
+  --bg-sidebar: #171b21;
+  --bg-page: #1c2128;
+  --grid-line: rgba(120, 150, 190, 0.28);
+  --margin-line: rgba(210, 130, 130, 0.45);
+  --ink: #e8e6df;
+  --border: #2c333d;
+  --accent: #7fb2e5;
+  --text-muted: #9aa2ab;
+  --hover-bg: rgba(127, 178, 229, 0.1);
+
+  --status-draft: #9aa2ab;
+  --status-checked: #6fcf9a;
+  --status-superseded: #e88787;
+
+  --text-red: #e88787;
+  --text-purple: #c79bef;
+  --text-green: #6fcf9a;
+  --text-gray: #a9b8c6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: "Patrick Hand", cursive;
+  background: var(--bg-app);
+  color: var(--ink);
+}
+
+button,
+select,
+input {
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ---------- header ---------- */
+
+#app-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+#sidebar-toggle,
+#darkmode-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.title-input {
+  font-family: "Caveat", cursive;
+  font-size: 1.5rem;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  min-width: 180px;
+  flex: 0 1 320px;
+}
+
+.title-input:focus {
+  outline: none;
+  border-bottom: 1px solid var(--accent);
+}
+
+.formal-meta {
+  display: none;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.header-spacer {
+  flex: 1;
+}
+
+.save-indicator {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.storage-mode-badge {
+  font-size: 0.75rem;
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.storage-mode-badge.mode-drive {
+  color: var(--status-checked);
+  border-color: var(--status-checked);
+}
+
+.header-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+
+.signin-btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+
+/* ---------- body layout ---------- */
+
+#app-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+#sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  transition: margin-left 0.15s ease;
+}
+
+#app-body.sidebar-collapsed #sidebar {
+  margin-left: calc(-1 * var(--sidebar-width));
+}
+
+#sidebar-header {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+#new-sheet-btn {
+  width: 100%;
+  padding: 0.5rem;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+#page {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+  background-color: var(--bg-page);
+  background-image: linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 28px 28px;
+  padding: 2rem 2rem 6rem calc(2.4rem + 1.5rem);
+}
+
+.page-margin-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2.4rem;
+  width: 1.5px;
+  background: var(--margin-line);
+  pointer-events: none;
+}
+
+.page-watermark {
+  position: fixed;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-25deg);
+  font-family: "Patrick Hand", cursive;
+  font-size: 5rem;
+  font-weight: 700;
+  letter-spacing: 0.3rem;
+  opacity: 0.1;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.page-watermark.status-checked {
+  color: var(--status-checked);
+}
+
+.page-watermark.status-superseded {
+  color: var(--status-superseded);
+}
+
+/* ---------- sidebar: search / filter / list ---------- */
+
+.sidebar-search {
+  margin: 0.75rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-header);
+  color: var(--ink);
+}
+
+.sidebar-tag-filter-wrap {
+  padding: 0 0.75rem;
+}
+
+.tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.tag-filter-chip {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.tag-filter-chip.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.sidebar-status,
+.sidebar-empty {
+  padding: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sidebar-item {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  position: relative;
+}
+
+.sidebar-item:hover {
+  background: var(--hover-bg);
+}
+
+.sidebar-item-title {
+  font-family: "Caveat", cursive;
+  font-size: 1.2rem;
+  font-weight: 600;
+  padding-right: 5rem;
+}
+
+.sidebar-item-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.sidebar-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.sidebar-item-tag {
+  font-size: 0.7rem;
+  background: var(--hover-bg);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  color: var(--text-muted);
+}
+
+.sidebar-item-badge {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.75rem;
+}
+
+mark {
+  background: #ffe27a;
+  color: #2b2b2b;
+  border-radius: 2px;
+}
+
+/* ---------- status badge / dropdown ---------- */
+
+.status-select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  background: var(--bg-header);
+  color: var(--ink);
+}
+
+.status-badge {
+  font-size: 0.7rem;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  color: white;
+  white-space: nowrap;
+}
+
+.status-badge.status-draft {
+  background: var(--status-draft);
+}
+
+.status-badge.status-checked {
+  background: var(--status-checked);
+}
+
+.status-badge.status-superseded {
+  background: var(--status-superseded);
+}
+
+select.status-select.status-draft {
+  color: var(--status-draft);
+  background: var(--bg-header);
+}
+
+select.status-select.status-checked {
+  color: var(--status-checked);
+}
+
+select.status-select.status-superseded {
+  color: var(--status-superseded);
+}
+
+/* ---------- tags editor (header) ---------- */
+
+.tag-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.tag-chip {
+  background: var(--hover-bg);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+
+.tag-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 0;
+  margin-left: 0.15rem;
+}
+
+.tag-input {
+  border: none;
+  border-bottom: 1px dashed var(--border);
+  background: transparent;
+  color: var(--ink);
+  width: 5rem;
+  font-size: 0.85rem;
+}
+
+.tag-input:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+
+/* ---------- blocks ---------- */
+
+#blocks-container {
+  position: relative;
+  z-index: 1;
+  /* 6.5in at 96 CSS px/in — an 8.5in Letter page with the standard 1in
+     margin on each side, so the on-screen editing width roughly matches
+     what actually prints. (print.css overrides this to 100% for the
+     printed output itself, which flows within the browser's own print
+     margins — this is just the screen preview being honest about it.) */
+  max-width: 624px;
+}
+
+.block-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+  border-radius: 6px;
+  padding: 0.25rem;
+}
+
+.block-row.dragging {
+  opacity: 0.4;
+}
+
+.block-row.cut {
+  opacity: 0.55;
+  outline: 2px dashed var(--accent);
+}
+
+.block-handle {
+  cursor: grab;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.5rem 0.5rem;
+  border-radius: 6px;
+  user-select: none;
+  touch-action: none;
+}
+
+.block-handle:hover {
+  background: var(--hover-bg);
+  color: var(--ink);
+}
+
+.block-handle.grabbing {
+  cursor: grabbing;
+  background: var(--hover-bg);
+}
+
+.block-drop-indicator {
+  height: 3px;
+  margin: 0 0 0.75rem;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.block-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.block-remove,
+.block-cut {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding-top: 0.4rem;
+  visibility: hidden;
+  font-family: "Patrick Hand", cursive;
+}
+
+.block-row:hover .block-remove,
+.block-row:hover .block-cut {
+  visibility: visible;
+}
+
+.block-row.cut .block-cut {
+  visibility: visible;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.cut-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--hover-bg);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.cut-banner-cancel {
+  border: 1px solid var(--border);
+  background: var(--bg-header);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: "Patrick Hand", cursive;
+  margin-left: auto;
+}
+
+.paste-slot {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-family: "Patrick Hand", cursive;
+  font-size: 0.85rem;
+  color: var(--accent);
+  background: transparent;
+  border: 1px dashed var(--accent);
+  border-radius: 6px;
+  padding: 0.35rem;
+  margin-bottom: 0.75rem;
+  cursor: pointer;
+}
+
+.paste-slot:hover {
+  background: var(--hover-bg);
+}
+
+/* text block */
+
+.text-block-content {
+  position: relative;
+}
+
+.text-block-input {
+  width: 100%;
+  font-family: "Caveat", cursive;
+  font-size: 1.4rem;
+  line-height: 1.5rem;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  resize: none;
+  /* auto, not hidden — a block resized shorter than its content needs to
+     scroll internally rather than clip it. Harmless during auto-grow: the
+     textarea's own height always exactly fits its content there, so no
+     scrollbar appears. */
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.text-block-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.text-block-preview {
+  font-family: "Caveat", cursive;
+  font-size: 1.4rem;
+  line-height: 1.5rem;
+  color: var(--ink);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: text;
+  min-height: 1.5rem;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.text-block-preview:hover {
+  border-color: var(--border);
+}
+
+.text-block-preview a {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.text-block-preview a:hover {
+  opacity: 0.75;
+}
+
+/* Regular (non-handwriting) font options. Loaded after the base
+   .text-block-input / .text-block-preview rules, so the extra class wins
+   the font-family tie via source order. Sized down slightly from the
+   handwriting default — a script font needs a larger point size than a
+   sans-serif to read as the same visual weight, so keeping the exact same
+   rem value across both would make Arial/Calibri look oversized. */
+.text-font-arial {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.text-font-calibri {
+  font-family: Calibri, "Segoe UI", sans-serif;
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+/* Tooltip trigger + popup. Fixed (non-theme-varying) colors rather than the
+   page's --ink/--bg-page pair — deliberately, so the popup and its link
+   color keep guaranteed contrast in both light and dark mode instead of
+   inheriting whatever the page's current polarity happens to be. */
+.text-tooltip-trigger {
+  position: relative;
+  border-bottom: 1px dotted var(--text-muted);
+  cursor: help;
+}
+
+/* position: fixed + JS-computed top/left (src/tooltipPopup.js) rather than
+   absolute + bottom:100%/left:0 — see the comment at the top of that file
+   for why: overflow:auto on the scrollable preview clips an absolutely-
+   positioned popup, and a trigger that wraps across two lines gives
+   position:absolute an unreliable containing-block position anyway.
+   Visibility is likewise JS-driven (.visible) rather than :hover/
+   :focus-within, since fixed positioning needs a measured position before
+   it can be shown in the right place. */
+.text-tooltip-popup {
+  display: none;
+  position: fixed;
+  background: #2b2b2b;
+  color: #f5f3ec;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  font-family: "Patrick Hand", cursive;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  white-space: normal;
+  width: max-content;
+  max-width: 260px;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.text-tooltip-popup.visible {
+  display: block;
+}
+
+.text-tooltip-popup a {
+  color: #8ec4f2;
+}
+
+.text-block-placeholder {
+  color: var(--text-muted);
+  font-family: "Patrick Hand", cursive;
+  font-size: 1rem;
+}
+
+.text-fmt-red {
+  color: var(--text-red);
+}
+
+.text-fmt-purple {
+  color: var(--text-purple);
+}
+
+.text-fmt-green {
+  color: var(--text-green);
+}
+
+.text-fmt-gray {
+  color: var(--text-gray);
+}
+
+.text-fmt-blue {
+  color: var(--accent);
+}
+
+.text-format-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0.3rem;
+}
+
+/* An explicit `display` here otherwise wins over the browser's own rule
+   for [hidden] (same specificity, this stylesheet loads later) — so
+   toolbar.hidden = true in JS was silently not hiding it. This wins that
+   tie back the other way. */
+.text-format-toolbar[hidden] {
+  display: none;
+}
+
+.text-format-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 0.15rem 0.55rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.text-format-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.text-format-btn.bold {
+  font-weight: 700;
+}
+
+.text-format-btn.italic {
+  font-style: italic;
+}
+
+.text-format-btn.underline {
+  text-decoration: underline;
+}
+
+.text-format-color,
+.text-format-font {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.15rem 0.4rem;
+  background: var(--bg-header);
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+/* sketch block */
+
+.sketch-block {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-header);
+  overflow: hidden;
+}
+
+.sketch-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.4rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-sidebar);
+}
+
+.sketch-tool-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.sketch-tool-btn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.sketch-tool-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sketch-color-select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem 0.4rem;
+  background: var(--bg-header);
+  color: var(--ink);
+}
+
+.sketch-snap-toggle {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.sketch-canvas-wrap {
+  /* inline-block, not block — this must shrink-to-fit the canvas's actual
+     rendered size, or the resize handle (anchored to this wrapper's own
+     bottom-right corner) would sit at the container's edge instead of the
+     canvas's, once the canvas is resized narrower than the block. */
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: top;
+}
+
+.sketch-canvas {
+  display: block;
+  max-width: 100%;
+  touch-action: none;
+  cursor: crosshair;
+  background: var(--bg-page);
+}
+
+/* image block */
+
+.image-block {
+  border-radius: 6px;
+}
+
+.image-block:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.image-block-prompt {
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: "Patrick Hand", cursive;
+  font-size: 1rem;
+}
+
+.image-block-prompt:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.image-block-imgwrap {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  width: 100%;
+}
+
+.image-block-img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.image-block-replace {
+  margin-top: 0.4rem;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 0.2rem 0.6rem;
+  cursor: pointer;
+  font-family: "Patrick Hand", cursive;
+  font-size: 0.85rem;
+}
+
+.image-block-replace:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.image-block-status {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  min-height: 1em;
+  margin-top: 0.2rem;
+}
+
+/* ---------- resize handle (shared: text/sketch/image blocks) ---------- */
+
+.resize-handle {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0.5;
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--text-muted) 0px,
+    var(--text-muted) 1.5px,
+    transparent 1.5px,
+    transparent 4px
+  );
+  -webkit-mask-image: linear-gradient(-45deg, black 40%, transparent 40%);
+  mask-image: linear-gradient(-45deg, black 40%, transparent 40%);
+}
+
+.resize-handle:hover {
+  opacity: 1;
+}
+
+.resize-handle.axis-vertical {
+  cursor: ns-resize;
+}
+
+.resize-handle.axis-horizontal {
+  cursor: ew-resize;
+}
+
+/* ---------- add block bar ---------- */
+
+.add-block-bar {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.add-block-btn {
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-family: "Patrick Hand", cursive;
+  font-size: 1rem;
+}
+
+.add-block-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 720px) {
+  #app-body {
+    position: relative;
+  }
+  #sidebar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 5;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+  }
+  #app-body:not(.sidebar-collapsed) #sidebar {
+    margin-left: 0;
+  }
+  #app-body.sidebar-collapsed #sidebar {
+    margin-left: calc(-1 * var(--sidebar-width));
+  }
+}
+
+/* ---------- formal view ---------- */
+/* A clean, printable-looking read view: no sidebar, no editing chrome, no
+   graph paper — just title, dates, status watermark, and content. The
+   view-toggle button itself stays visible (handled by not being listed
+   here), matching the plan's "toggle visible in both views" requirement. */
+
+[data-view-mode="formal"] #sidebar,
+[data-view-mode="formal"] #sidebar-toggle,
+[data-view-mode="formal"] #tags-slot,
+[data-view-mode="formal"] #status-slot,
+[data-view-mode="formal"] .storage-mode-badge,
+[data-view-mode="formal"] .save-indicator,
+[data-view-mode="formal"] #export-btn,
+[data-view-mode="formal"] #import-btn,
+[data-view-mode="formal"] #darkmode-toggle,
+[data-view-mode="formal"] .signin-btn,
+[data-view-mode="formal"] .page-margin-line,
+[data-view-mode="formal"] .block-handle,
+[data-view-mode="formal"] .block-cut,
+[data-view-mode="formal"] .block-remove,
+[data-view-mode="formal"] .add-block-bar,
+[data-view-mode="formal"] .cut-banner,
+[data-view-mode="formal"] .paste-slot {
+  display: none !important;
+}
+
+[data-view-mode="formal"] #page {
+  background-color: #ffffff;
+  background-image: none;
+}
+
+[data-view-mode="formal"] .formal-meta {
+  display: block;
+}
+
+[data-view-mode="formal"] .title-input {
+  font-size: 2rem;
+  cursor: default;
+}
+
+[data-view-mode="formal"] .block-row {
+  padding: 0;
+}
+
+[data-view-mode="formal"] .text-block-preview.formal {
+  cursor: default;
+}
+
+[data-view-mode="formal"] .sketch-block.formal {
+  border: none;
+  background: transparent;
+}
+
+[data-view-mode="formal"] .sketch-canvas {
+  cursor: default;
+  background-color: #ffffff;
+}

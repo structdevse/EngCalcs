@@ -1,0 +1,57 @@
+/* Only applied by the browser during print/print-preview (loaded with
+   media="print"). The Print button always switches to formal view first,
+   so formal view's own display:none rules already strip the sidebar,
+   toolbars, and editing chrome — display:none elements never print anyway.
+   This file only needs to handle what's still true in formal view but
+   shouldn't appear on paper, plus print-specific layout fixes. */
+
+/* The view-toggle and Print button themselves stay visible in formal view
+   on screen, but have no place on a printed page. */
+#view-toggle,
+#print-btn {
+  display: none !important;
+}
+
+/* The screen layout locks #page to the viewport height with its own
+   scrollbar (for the on-screen notebook). Print needs the opposite: let
+   content flow naturally so the browser can paginate it across sheets. */
+html,
+body,
+#app,
+#app-body,
+#page {
+  height: auto !important;
+  overflow: visible !important;
+  background: #ffffff !important;
+}
+
+#blocks-container {
+  max-width: 100% !important;
+}
+
+/* position: fixed elements are a well-known trigger for Chromium (and other
+   engines) inserting a spurious blank leading page during print — the
+   watermark being fixed was causing exactly that. #page already establishes
+   a positioning context, so absolute anchors it the same way without the
+   pagination bug. Trade-off: on a multi-page sheet it now appears once
+   (wherever 45% down the full content lands) rather than repeating on every
+   page — a real page-1-is-blank bug outweighs that. */
+.page-watermark {
+  position: absolute;
+}
+
+/* Keep a sketch diagram from being split across a page break — its canvas
+   is a fixed 360px, so it always comfortably fits on one page, and cutting
+   a drawing in half is much harder to read than pushing it whole to the
+   next page. Text blocks are deliberately NOT included here: they have no
+   height limit, and a long hand-calc writeup can easily exceed a full page.
+   Forcing "never split" on something taller than the page it's on doesn't
+   work — the browser pushes it to the next page (leaving the current one
+   blank below whatever came before it) and, since it still doesn't fit,
+   fragments it anyway in a way that visually duplicates content across the
+   break. A long text block splitting naturally across pages, like a normal
+   paragraph in any printed document, is the correct fallback. */
+.sketch-block {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
