@@ -703,6 +703,21 @@ select.status-select.status-superseded {
   margin: 0.5em 0;
 }
 
+/* MathLive exposes this toggle as a styleable shadow part — hidden
+   outright rather than just kept from auto-opening (mathVirtualKeyboardPolicy
+   "manual" in richTextEditor.js), since its buttons don't reliably insert
+   into the field in this popup's context and real typing already works
+   correctly; better to remove the broken path than leave it clickable. */
+.rte-math-popup-field::part(virtual-keyboard-toggle) {
+  display: none;
+}
+
+/* Emptied via menuItems = [] in richTextEditor.js — hiding the now-inert
+   button too rather than leaving a click target that opens nothing. */
+.rte-math-popup-field::part(menu-toggle) {
+  display: none;
+}
+
 .rte-math-popup-overlay {
   position: fixed;
   inset: 0;
