@@ -29,7 +29,7 @@ import { renderEditableHtml, asciiMathToLatexPublic, TEXT_COLOR_NAMES } from "./
 export function createRichTextEditor(
   block,
   onChange,
-  { tooltips = {}, onCreateTooltip, onUpdateTooltip } = {}
+  { tooltips = {}, legacyTooltipTexts = [], onCreateTooltip, onUpdateTooltip } = {}
 ) {
   const editor = document.createElement("div");
   editor.className = "rte-editor";
@@ -137,7 +137,7 @@ export function createRichTextEditor(
     const savedRange = range.cloneRange();
     const selectedText = savedRange.toString();
     openTooltipPopup(
-      { triggerText: selectedText, tooltipText: "", isLinked: false, tooltips },
+      { triggerText: selectedText, tooltipText: "", isLinked: false, tooltips, legacyTooltipTexts },
       {
         onConfirm: ({ triggerText, mode, tooltipText, tooltipId }) => {
           const id = mode === "link" ? tooltipId : onCreateTooltip(tooltipText);
@@ -181,7 +181,13 @@ export function createRichTextEditor(
       ? tooltips[trigger.dataset.tooltipId] || ""
       : trigger.dataset.tooltip || "";
     openTooltipPopup(
-      { triggerText: trigger.textContent, tooltipText: currentTooltipText, isLinked, tooltips },
+      {
+        triggerText: trigger.textContent,
+        tooltipText: currentTooltipText,
+        isLinked,
+        tooltips,
+        legacyTooltipTexts,
+      },
       {
         onConfirm: ({ triggerText, mode, tooltipText, tooltipId }) => {
           trigger.textContent = triggerText;
@@ -405,9 +411,24 @@ function openMathPopup(initialLatex, onConfirm) {
 // { triggerText, mode: "link", tooltipId }) fires on a valid confirm;
 // callbacks.onUnlink() fires only from the Unlink button. Cancel/Escape/
 // clicking the backdrop just close it with no callback either way.
-function openTooltipPopup({ triggerText = "", tooltipText = "", isLinked = false, tooltips = {} }, callbacks) {
+//
+// The "link to existing" list draws from two sources: tooltips (the
+// sheet's shared library, already id-backed) and legacyTooltipTexts (text
+// blocks.js found still living as private [trigger]{text} elsewhere,
+// never promoted into the library). Picking one of the latter reports
+// back as an ordinary mode: "text" confirm — reusing exactly the "create
+// a shared entry seeded with this text" path a freshly-typed tooltip
+// already goes through, since that's all promoting one really is.
+function openTooltipPopup(
+  { triggerText = "", tooltipText = "", isLinked = false, tooltips = {}, legacyTooltipTexts = [] },
+  callbacks
+) {
   const { onConfirm, onUnlink } = callbacks;
-  const tooltipEntries = Object.entries(tooltips);
+  const alreadyShared = new Set(Object.values(tooltips));
+  const candidates = [
+    ...Object.entries(tooltips).map(([id, text]) => ({ kind: "id", id, text })),
+    ...legacyTooltipTexts.filter((text) => !alreadyShared.has(text)).map((text) => ({ kind: "legacy", text })),
+  ];
 
   const overlay = document.createElement("div");
   overlay.className = "rte-math-popup-overlay";
@@ -429,7 +450,7 @@ function openTooltipPopup({ triggerText = "", tooltipText = "", isLinked = false
 
   let mode = "text";
 
-  if (tooltipEntries.length > 0) {
+  if (candidates.length > 0) {
     const modeRow = document.createElement("div");
     modeRow.className = "rte-tooltip-popup-mode-row";
 
@@ -470,10 +491,11 @@ function openTooltipPopup({ triggerText = "", tooltipText = "", isLinked = false
   const linkSelect = document.createElement("select");
   linkSelect.className = "rte-tooltip-popup-select";
   linkSelect.hidden = true;
-  tooltipEntries.forEach(([id, text]) => {
+  candidates.forEach((candidate, index) => {
     const opt = document.createElement("option");
-    opt.value = id;
-    opt.textContent = text.length > 70 ? `${text.slice(0, 70)}…` : text;
+    opt.value = String(index);
+    const label = candidate.text.length > 70 ? `${candidate.text.slice(0, 70)}…` : candidate.text;
+    opt.textContent = candidate.kind === "legacy" ? `${label} (not yet shared)` : label;
     linkSelect.appendChild(opt);
   });
   box.appendChild(linkSelect);
@@ -524,10 +546,16 @@ function openTooltipPopup({ triggerText = "", tooltipText = "", isLinked = false
     const finalTrigger = triggerInput.value.trim();
     if (!finalTrigger) return;
     if (mode === "link") {
-      const id = linkSelect.value;
-      if (!id) return;
+      const candidate = candidates[Number(linkSelect.value)];
+      if (!candidate) return;
       close();
-      onConfirm({ triggerText: finalTrigger, mode: "link", tooltipId: id });
+      if (candidate.kind === "id") {
+        onConfirm({ triggerText: finalTrigger, mode: "link", tooltipId: candidate.id });
+      } else {
+        // A legacy (not-yet-shared) text — promote it via the same path a
+        // freshly-typed tooltip uses, seeded with its existing text.
+        onConfirm({ triggerText: finalTrigger, mode: "text", tooltipText: candidate.text });
+      }
     } else {
       const text = tooltipInput.value.trim();
       if (!text) return;

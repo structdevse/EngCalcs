@@ -30,7 +30,14 @@ function applyFontClass(el, font) {
 export function createTextBlock(
   block,
   onChange,
-  { autoFocus = false, readOnly = false, tooltips = {}, onCreateTooltip, onUpdateTooltip } = {}
+  {
+    autoFocus = false,
+    readOnly = false,
+    tooltips = {},
+    legacyTooltipTexts = [],
+    onCreateTooltip,
+    onUpdateTooltip,
+  } = {}
 ) {
   const wrap = document.createElement("div");
   wrap.className = "text-block";
@@ -52,7 +59,7 @@ export function createTextBlock(
       autoGrow();
       onChange(block.content);
     },
-    { tooltips, onCreateTooltip, onUpdateTooltip }
+    { tooltips, legacyTooltipTexts, onCreateTooltip, onUpdateTooltip }
   );
   const editorEl = rte.element;
   editorEl.classList.add("text-block-input", "rte-live");

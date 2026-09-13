@@ -16,6 +16,31 @@ let focusBlockId = null;
 // the same operation.
 let cutBlockId = null;
 
+// A tooltip created before linking existed (or never touched since) is
+// [trigger]{text} — private text, not yet an entry in the sheet's shared
+// tooltips library. Rather than requiring each one be individually opened
+// and re-saved before it's linkable, the "link to existing" list also
+// offers these: scans every text block's raw content for that pattern and
+// returns each distinct tooltip text found. Picking one from the popup
+// promotes it into the shared library at that moment (see richTextEditor.js
+// — reusing the same "type new text" path, since seeding a fresh shared
+// entry with existing text is exactly that). The negative lookahead
+// excludes {{id}} (an already-linked tooltip) from matching as if it were
+// literal text "{id}".
+function collectLegacyTooltipTexts() {
+  const sheet = state.getSheet();
+  const texts = new Set();
+  const pattern = /\[[^\]]+\]\{(?!\{)([^}]+)\}/g;
+  sheet.blocks.forEach((b) => {
+    if (b.type !== "text" || !b.content) return;
+    let match;
+    while ((match = pattern.exec(b.content)) !== null) {
+      texts.add(match[1]);
+    }
+  });
+  return [...texts];
+}
+
 // Renders the block list for the current sheet into `container`, and wires
 // up add/reorder/delete. Call renderBlocks() again after loading a new sheet.
 export function renderBlocks(container) {
@@ -160,6 +185,7 @@ function renderBlock(block) {
           autoFocus: block.id === focusBlockId,
           readOnly,
           tooltips: state.getTooltips(),
+          legacyTooltipTexts: collectLegacyTooltipTexts(),
           onCreateTooltip: (text) => state.createTooltip(text),
           onUpdateTooltip: (id, text) => state.setTooltip(id, text),
         }
