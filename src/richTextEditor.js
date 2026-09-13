@@ -212,6 +212,10 @@ export function createRichTextEditor(
               handleInput();
             }
           : null,
+        onDelete: () => {
+          trigger.remove();
+          handleInput();
+        },
       }
     );
   });
@@ -428,7 +432,7 @@ function openTooltipPopup(
   { triggerText = "", tooltipText = "", isLinked = false, tooltipCandidates = [] },
   callbacks
 ) {
-  const { onConfirm, onUnlink } = callbacks;
+  const { onConfirm, onUnlink, onDelete } = callbacks;
   const triggerCounts = new Map();
   tooltipCandidates.forEach((c) => {
     triggerCounts.set(c.triggerText, (triggerCounts.get(c.triggerText) || 0) + 1);
@@ -518,17 +522,37 @@ function openTooltipPopup(
   const buttonRow = document.createElement("div");
   buttonRow.className = "rte-math-popup-buttons";
 
-  if (isLinked && onUnlink) {
-    const unlinkBtn = document.createElement("button");
-    unlinkBtn.type = "button";
-    unlinkBtn.className = "rte-tooltip-popup-unlink";
-    unlinkBtn.textContent = "Unlink";
-    unlinkBtn.title = "Make this one instance independent — won't update when the shared tooltip changes anymore";
-    unlinkBtn.addEventListener("click", () => {
-      close();
-      onUnlink();
-    });
-    buttonRow.appendChild(unlinkBtn);
+  if ((isLinked && onUnlink) || onDelete) {
+    const destructiveGroup = document.createElement("div");
+    destructiveGroup.className = "rte-tooltip-popup-destructive-group";
+
+    if (isLinked && onUnlink) {
+      const unlinkBtn = document.createElement("button");
+      unlinkBtn.type = "button";
+      unlinkBtn.className = "rte-tooltip-popup-unlink";
+      unlinkBtn.textContent = "Unlink";
+      unlinkBtn.title = "Make this one instance independent — won't update when the shared tooltip changes anymore";
+      unlinkBtn.addEventListener("click", () => {
+        close();
+        onUnlink();
+      });
+      destructiveGroup.appendChild(unlinkBtn);
+    }
+
+    if (onDelete) {
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "rte-tooltip-popup-delete";
+      deleteBtn.textContent = "Delete";
+      deleteBtn.title = "Remove this tooltip entirely";
+      deleteBtn.addEventListener("click", () => {
+        close();
+        onDelete();
+      });
+      destructiveGroup.appendChild(deleteBtn);
+    }
+
+    buttonRow.appendChild(destructiveGroup);
   }
 
   const cancelBtn = document.createElement("button");

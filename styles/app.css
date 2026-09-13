@@ -852,11 +852,23 @@ select.status-select.status-superseded {
   display: none;
 }
 
-.rte-math-popup-buttons button.rte-tooltip-popup-unlink {
+.rte-tooltip-popup-destructive-group {
+  display: flex;
+  gap: 0.5rem;
   margin-right: auto;
+}
+
+.rte-math-popup-buttons button.rte-tooltip-popup-unlink {
   background: none;
   border-color: transparent;
   color: var(--text-muted);
+  text-decoration: underline;
+}
+
+.rte-math-popup-buttons button.rte-tooltip-popup-delete {
+  background: none;
+  border-color: transparent;
+  color: #d16a6a;
   text-decoration: underline;
 }
 
