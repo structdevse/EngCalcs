@@ -29,7 +29,7 @@ import { renderEditableHtml, asciiMathToLatexPublic, TEXT_COLOR_NAMES } from "./
 export function createRichTextEditor(
   block,
   onChange,
-  { tooltips = {}, legacyTooltipTexts = [], onCreateTooltip, onUpdateTooltip } = {}
+  { tooltips = {}, tooltipCandidates = [], onCreateTooltip, onUpdateTooltip } = {}
 ) {
   const editor = document.createElement("div");
   editor.className = "rte-editor";
@@ -137,7 +137,7 @@ export function createRichTextEditor(
     const savedRange = range.cloneRange();
     const selectedText = savedRange.toString();
     openTooltipPopup(
-      { triggerText: selectedText, tooltipText: "", isLinked: false, tooltips, legacyTooltipTexts },
+      { triggerText: selectedText, tooltipText: "", isLinked: false, tooltipCandidates },
       {
         onConfirm: ({ triggerText, mode, tooltipText, tooltipId }) => {
           const id = mode === "link" ? tooltipId : onCreateTooltip(tooltipText);
@@ -185,8 +185,7 @@ export function createRichTextEditor(
         triggerText: trigger.textContent,
         tooltipText: currentTooltipText,
         isLinked,
-        tooltips,
-        legacyTooltipTexts,
+        tooltipCandidates,
       },
       {
         onConfirm: ({ triggerText, mode, tooltipText, tooltipId }) => {
@@ -412,23 +411,33 @@ function openMathPopup(initialLatex, onConfirm) {
 // callbacks.onUnlink() fires only from the Unlink button. Cancel/Escape/
 // clicking the backdrop just close it with no callback either way.
 //
-// The "link to existing" list draws from two sources: tooltips (the
-// sheet's shared library, already id-backed) and legacyTooltipTexts (text
-// blocks.js found still living as private [trigger]{text} elsewhere,
-// never promoted into the library). Picking one of the latter reports
-// back as an ordinary mode: "text" confirm — reusing exactly the "create
-// a shared entry seeded with this text" path a freshly-typed tooltip
-// already goes through, since that's all promoting one really is.
+// tooltipCandidates (blocks.js's collectTooltipCandidates) covers both
+// already-shared ({{id}}) and legacy, still-private ({text}) tooltips
+// found anywhere in the sheet. Picking a legacy one reports back as an
+// ordinary mode: "text" confirm — reusing exactly the "create a shared
+// entry seeded with this text" path a freshly-typed tooltip already goes
+// through, since that's all promoting one really is.
+//
+// The dropdown shows each candidate's TRIGGER text, not its tooltip
+// content — that's what the user actually recognizes from reading their
+// own document, where a tooltip's wording can be long or generic. Only
+// when the same trigger text maps to more than one distinct tooltip
+// (genuinely different notes that happen to share wording) does the
+// tooltip text get appended to those specific entries, to tell them apart.
 function openTooltipPopup(
-  { triggerText = "", tooltipText = "", isLinked = false, tooltips = {}, legacyTooltipTexts = [] },
+  { triggerText = "", tooltipText = "", isLinked = false, tooltipCandidates = [] },
   callbacks
 ) {
   const { onConfirm, onUnlink } = callbacks;
-  const alreadyShared = new Set(Object.values(tooltips));
-  const candidates = [
-    ...Object.entries(tooltips).map(([id, text]) => ({ kind: "id", id, text })),
-    ...legacyTooltipTexts.filter((text) => !alreadyShared.has(text)).map((text) => ({ kind: "legacy", text })),
-  ];
+  const triggerCounts = new Map();
+  tooltipCandidates.forEach((c) => {
+    triggerCounts.set(c.triggerText, (triggerCounts.get(c.triggerText) || 0) + 1);
+  });
+  const candidates = tooltipCandidates.map((c) => {
+    const ambiguous = triggerCounts.get(c.triggerText) > 1;
+    const preview = c.tooltipText.length > 50 ? `${c.tooltipText.slice(0, 50)}…` : c.tooltipText;
+    return { ...c, label: ambiguous ? `${c.triggerText} — ${preview}` : c.triggerText };
+  });
 
   const overlay = document.createElement("div");
   overlay.className = "rte-math-popup-overlay";
@@ -494,8 +503,7 @@ function openTooltipPopup(
   candidates.forEach((candidate, index) => {
     const opt = document.createElement("option");
     opt.value = String(index);
-    const label = candidate.text.length > 70 ? `${candidate.text.slice(0, 70)}…` : candidate.text;
-    opt.textContent = candidate.kind === "legacy" ? `${label} (not yet shared)` : label;
+    opt.textContent = candidate.kind === "legacy" ? `${candidate.label} (not yet shared)` : candidate.label;
     linkSelect.appendChild(opt);
   });
   box.appendChild(linkSelect);
@@ -554,7 +562,7 @@ function openTooltipPopup(
       } else {
         // A legacy (not-yet-shared) text — promote it via the same path a
         // freshly-typed tooltip uses, seeded with its existing text.
-        onConfirm({ triggerText: finalTrigger, mode: "text", tooltipText: candidate.text });
+        onConfirm({ triggerText: finalTrigger, mode: "text", tooltipText: candidate.tooltipText });
       }
     } else {
       const text = tooltipInput.value.trim();

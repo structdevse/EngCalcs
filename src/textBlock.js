@@ -34,7 +34,7 @@ export function createTextBlock(
     autoFocus = false,
     readOnly = false,
     tooltips = {},
-    legacyTooltipTexts = [],
+    tooltipCandidates = [],
     onCreateTooltip,
     onUpdateTooltip,
   } = {}
@@ -59,7 +59,7 @@ export function createTextBlock(
       autoGrow();
       onChange(block.content);
     },
-    { tooltips, legacyTooltipTexts, onCreateTooltip, onUpdateTooltip }
+    { tooltips, tooltipCandidates, onCreateTooltip, onUpdateTooltip }
   );
   const editorEl = rte.element;
   editorEl.classList.add("text-block-input", "rte-live");

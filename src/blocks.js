@@ -16,29 +16,51 @@ let focusBlockId = null;
 // the same operation.
 let cutBlockId = null;
 
-// A tooltip created before linking existed (or never touched since) is
-// [trigger]{text} — private text, not yet an entry in the sheet's shared
-// tooltips library. Rather than requiring each one be individually opened
-// and re-saved before it's linkable, the "link to existing" list also
-// offers these: scans every text block's raw content for that pattern and
-// returns each distinct tooltip text found. Picking one from the popup
-// promotes it into the shared library at that moment (see richTextEditor.js
-// — reusing the same "type new text" path, since seeding a fresh shared
-// entry with existing text is exactly that). The negative lookahead
-// excludes {{id}} (an already-linked tooltip) from matching as if it were
-// literal text "{id}".
-function collectLegacyTooltipTexts() {
+// Gathers every tooltip trigger currently in the sheet as a candidate for
+// the "link to existing" list — both already-shared ([trigger]{{id}}) and
+// legacy, still-private ([trigger]{text}) ones created before linking
+// existed or never touched since. Returned WITH trigger text (what the
+// user actually recognizes from reading their own document) rather than
+// just tooltip content, since richTextEditor.js's popup shows that as the
+// primary label — see its comment for why, and for how it decides when a
+// trigger needs its tooltip text shown alongside it to disambiguate.
+// Picking a "legacy" one promotes it into the shared library at that
+// moment (reusing the same "type new text" path, since seeding a fresh
+// shared entry with existing text is exactly that).
+function collectTooltipCandidates() {
   const sheet = state.getSheet();
-  const texts = new Set();
-  const pattern = /\[[^\]]+\]\{(?!\{)([^}]+)\}/g;
+  const tooltips = state.getTooltips();
+  const candidates = [];
+  const seen = new Set();
+  const linkedPattern = /\[([^\]]+)\]\{\{([^}]+)\}\}/g;
+  // Negative lookahead excludes {{id}} (already handled above) from also
+  // matching here as if it were literal text "{id}".
+  const literalPattern = /\[([^\]]+)\]\{(?!\{)([^}]+)\}/g;
+
   sheet.blocks.forEach((b) => {
     if (b.type !== "text" || !b.content) return;
+
     let match;
-    while ((match = pattern.exec(b.content)) !== null) {
-      texts.add(match[1]);
+    linkedPattern.lastIndex = 0;
+    while ((match = linkedPattern.exec(b.content)) !== null) {
+      const [, triggerText, id] = match;
+      const key = `id:${id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push({ triggerText, tooltipText: tooltips[id] || "", kind: "id", id });
+    }
+
+    literalPattern.lastIndex = 0;
+    while ((match = literalPattern.exec(b.content)) !== null) {
+      const [, triggerText, tooltipText] = match;
+      const key = `legacy:${triggerText}|||${tooltipText}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push({ triggerText, tooltipText, kind: "legacy" });
     }
   });
-  return [...texts];
+
+  return candidates;
 }
 
 // Renders the block list for the current sheet into `container`, and wires
@@ -185,7 +207,7 @@ function renderBlock(block) {
           autoFocus: block.id === focusBlockId,
           readOnly,
           tooltips: state.getTooltips(),
-          legacyTooltipTexts: collectLegacyTooltipTexts(),
+          tooltipCandidates: collectTooltipCandidates(),
           onCreateTooltip: (text) => state.createTooltip(text),
           onUpdateTooltip: (id, text) => state.setTooltip(id, text),
         }
