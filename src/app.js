@@ -19,6 +19,7 @@ const els = {
   tagsSlot: document.getElementById("tags-slot"),
   saveIndicator: document.getElementById("save-indicator"),
   storageModeBadge: document.getElementById("storage-mode-badge"),
+  shareBtn: document.getElementById("share-btn"),
   exportBtn: document.getElementById("export-btn"),
   importBtn: document.getElementById("import-btn"),
   importFileInput: document.getElementById("import-file-input"),
@@ -71,7 +72,7 @@ els.viewToggle.addEventListener("click", () => {
 viewMode.onViewModeChange((mode) => {
   document.documentElement.dataset.viewMode = mode;
   els.viewToggle.textContent = mode === "formal" ? "App view" : "Formal view";
-  els.titleInput.readOnly = mode === "formal";
+  els.titleInput.readOnly = mode === "formal" || viewMode.isLocked();
   // Formal view is meant to look like a clean printed calc sheet regardless
   // of the user's dark-mode preference — force light while in it (without
   // persisting that as their real preference), then restore on the way out.
@@ -100,11 +101,14 @@ function renderHeader() {
   if (!sheet) return;
 
   els.titleInput.value = sheet.title;
+  els.titleInput.readOnly = viewMode.isFormal() || viewMode.isLocked();
   els.formalMeta.textContent = `Created ${formatDate(sheet.created)}  ·  Modified ${formatDate(sheet.modified)}`;
+
+  const readOnly = viewMode.isLocked();
 
   els.statusSlot.innerHTML = "";
   els.statusSlot.appendChild(
-    createStatusDropdown(sheet.status, (status) => state.setStatus(status))
+    createStatusDropdown(sheet.status, (status) => state.setStatus(status), { readOnly })
   );
 
   els.tagsSlot.innerHTML = "";
@@ -112,7 +116,8 @@ function renderHeader() {
     createTagEditor(
       sheet.tags,
       (tag) => state.addTag(tag),
-      (tag) => state.removeTag(tag)
+      (tag) => state.removeTag(tag),
+      { readOnly }
     )
   );
 
@@ -125,6 +130,12 @@ els.titleInput.addEventListener("input", () => {
 
 els.newSheetBtn.addEventListener("click", () => {
   state.newSheet();
+  // Saved right away (not left to the debounced autosave) so a blank sheet
+  // shows up in the sidebar immediately as visible confirmation the click
+  // worked — otherwise a fresh "Untitled sheet" looks identical to
+  // whatever blank sheet was already on screen, with nothing on screen to
+  // show anything happened.
+  saveNow();
 });
 
 // --- opening a sheet from the file browser ---
@@ -139,7 +150,17 @@ async function openSheet(fileId) {
   }
 }
 
-fileBrowser.initFileBrowser(els.fileBrowser, { onOpenSheet: openSheet });
+fileBrowser.initFileBrowser(els.fileBrowser, {
+  onOpenSheet: openSheet,
+  onDeleteSheet: (deletedId) => {
+    // The sheet currently open in the editor no longer exists in storage —
+    // start a fresh one rather than leaving the editor pointed at a fileId
+    // that the next autosave would otherwise just silently recreate.
+    if (state.getFileId() === deletedId) {
+      state.newSheet();
+    }
+  },
+});
 
 // --- react to state changes ---
 state.on("sheetLoaded", () => {
@@ -147,7 +168,8 @@ state.on("sheetLoaded", () => {
   renderBlocks(els.blocksContainer);
 });
 
-const autosave = debounce(async () => {
+async function saveNow() {
+  if (viewMode.isLocked()) return; // shared-link viewer — never writes back
   if (!storage.isReady()) return;
   const sheet = state.getSheet();
   if (!sheet) return;
@@ -164,7 +186,9 @@ const autosave = debounce(async () => {
   } catch (err) {
     els.saveIndicator.textContent = `Save failed: ${err.message}`;
   }
-}, AUTOSAVE_DELAY_MS);
+}
+
+const autosave = debounce(saveNow, AUTOSAVE_DELAY_MS);
 
 state.on("sheetChanged", () => {
   renderHeader();
@@ -188,7 +212,20 @@ storage.onModeChange(() => {
 
 // --- Google sign-in ---
 function updateSigninButton() {
-  els.signinBtn.textContent = drive.isSignedIn() ? "Sign out" : "Sign in with Google";
+  if (drive.isSignedIn()) {
+    els.signinBtn.textContent = "Sign out";
+  } else if (drive.wasSignedIn()) {
+    // The silent reauth attempt at boot didn't complete (Google's token
+    // client insists on trying to open an actual popup even for a silent
+    // refresh, which the browser blocks with no user gesture behind it) —
+    // so getting back into Drive mode needs one real click. Labeling it
+    // "Reconnect" rather than "Sign in with Google" says plainly that
+    // there's nothing to re-authorize, just one click to restore the
+    // session that already exists.
+    els.signinBtn.textContent = "Reconnect to Google Drive";
+  } else {
+    els.signinBtn.textContent = "Sign in with Google";
+  }
 }
 
 els.signinBtn.addEventListener("click", async () => {
@@ -218,6 +255,31 @@ function slugify(title) {
       .replace(/^-+|-+$/g, "") || "untitled"
   );
 }
+
+// --- share (read-only link, no sign-in required for the recipient) ---
+els.shareBtn.addEventListener("click", async () => {
+  if (storage.getMode() !== "drive" || !drive.isSignedIn()) {
+    alert("Sign in with Google Drive first — a share link needs the sheet saved there.");
+    return;
+  }
+  els.saveIndicator.textContent = "Preparing share link...";
+  try {
+    // A brand-new sheet (or one only ever saved locally before switching to
+    // Drive) has no Drive fileId yet — save it now so there's something to
+    // share, same file the owner is already looking at either way.
+    let fileId = state.getFileId();
+    if (!fileId) {
+      fileId = await storage.saveSheet(null, state.getSheet());
+      state.setFileId(fileId);
+    }
+    await drive.shareFile(fileId);
+    const url = `${location.origin}${location.pathname}?file=${fileId}`;
+    await navigator.clipboard.writeText(url);
+    els.saveIndicator.textContent = "Share link copied to clipboard!";
+  } catch (err) {
+    els.saveIndicator.textContent = `Couldn't create share link: ${err.message}`;
+  }
+});
 
 els.exportBtn.addEventListener("click", () => {
   const sheet = state.getSheet();
@@ -263,9 +325,40 @@ async function waitForGoogleIdentity(timeoutMs = 8000) {
   }
 }
 
+// --- shared read-only viewer (?file=DRIVE_FILE_ID, no sign-in at all) ---
+function hideOwnerOnlyChrome() {
+  els.sidebar.style.display = "none";
+  els.sidebarToggle.style.display = "none";
+  els.signinBtn.style.display = "none";
+  els.storageModeBadge.style.display = "none";
+  els.importBtn.style.display = "none";
+  els.shareBtn.style.display = "none";
+}
+
+async function bootSharedViewer(fileId) {
+  viewMode.lockReadOnly();
+  hideOwnerOnlyChrome();
+  els.saveIndicator.textContent = "Loading shared sheet...";
+  try {
+    const content = await drive.loadSheetContentPublic(fileId);
+    state.loadSheet(content, fileId);
+    els.saveIndicator.textContent = "Read-only shared view";
+  } catch (err) {
+    els.titleInput.value = "Couldn't load this shared sheet";
+    els.saveIndicator.textContent = err.message;
+  }
+}
+
 // --- boot ---
 async function boot() {
   initTheme();
+
+  const sharedFileId = new URLSearchParams(location.search).get("file");
+  if (sharedFileId) {
+    await bootSharedViewer(sharedFileId);
+    return;
+  }
+
   updateSigninButton();
   updateStorageModeBadge();
   fileBrowser.refreshFileBrowser();
@@ -274,6 +367,19 @@ async function boot() {
   try {
     await waitForGoogleIdentity();
     await drive.initGoogleAuth();
+    if (drive.wasSignedIn()) {
+      // Best-effort — GIS's token client insists on trying to open an
+      // actual popup even for this "silent" request, so with no user
+      // gesture behind a boot-time call, browsers routinely block it. When
+      // that happens updateSigninButton() (below) falls back to a
+      // "Reconnect to Google Drive" button — a real click reliably works,
+      // since it carries an actual gesture the popup isn't blocked on.
+      const signedIn = await drive.trySilentSignIn();
+      if (signedIn) {
+        storage.setMode("drive");
+      }
+      updateSigninButton();
+    }
   } catch (err) {
     // Drive being unavailable is non-fatal — the app already runs on the
     // local storage backend, so just note it quietly in the indicator.

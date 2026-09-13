@@ -66,9 +66,11 @@ export function renderBlocks(container) {
     return banner;
   }
 
-  const formal = viewMode.isFormal();
+  // Formal view is the owner's own toggle (freely reversible); locked is
+  // the one-way shared-link-viewer state. Either one means no editing.
+  const readOnly = viewMode.isFormal() || viewMode.isLocked();
 
-  if (cutBlockId && !formal) {
+  if (cutBlockId && !readOnly) {
     container.appendChild(buildCutBanner());
   }
 
@@ -77,19 +79,19 @@ export function renderBlocks(container) {
   let previousWasCutBlock = false;
   sheet.blocks.forEach((block, index) => {
     const isCutBlock = block.id === cutBlockId;
-    if (cutBlockId && !formal && !isCutBlock && !previousWasCutBlock) {
+    if (cutBlockId && !readOnly && !isCutBlock && !previousWasCutBlock) {
       container.appendChild(buildPasteSlot(index));
     }
     container.appendChild(renderBlock(block));
     previousWasCutBlock = isCutBlock;
   });
-  if (cutBlockId && !formal && !previousWasCutBlock) {
+  if (cutBlockId && !readOnly && !previousWasCutBlock) {
     container.appendChild(buildPasteSlot(sheet.blocks.length));
   }
 
   focusBlockId = null;
 
-  if (!formal) {
+  if (!readOnly) {
     container.appendChild(buildAddBar());
   }
 }
@@ -100,16 +102,19 @@ function renderBlock(block) {
   row.dataset.blockId = block.id;
   if (block.id === cutBlockId) row.classList.add("cut");
 
-  const handle = document.createElement("div");
-  handle.className = "block-handle";
-  handle.textContent = "⠿";
-  handle.title = "Drag to reorder";
-  row.appendChild(handle);
+  const readOnly = viewMode.isFormal() || viewMode.isLocked();
+
+  let handle = null;
+  if (!readOnly) {
+    handle = document.createElement("div");
+    handle.className = "block-handle";
+    handle.textContent = "⠿";
+    handle.title = "Drag to reorder";
+    row.appendChild(handle);
+  }
 
   const body = document.createElement("div");
   body.className = "block-body";
-
-  const readOnly = viewMode.isFormal();
 
   if (block.type === "sketch") {
     block.operations = block.operations || [];
@@ -157,31 +162,33 @@ function renderBlock(block) {
   }
   row.appendChild(body);
 
-  const cutBtn = document.createElement("button");
-  cutBtn.type = "button";
-  cutBtn.className = "block-cut";
-  const isCut = block.id === cutBlockId;
-  cutBtn.textContent = isCut ? "Cancel" : "Cut";
-  cutBtn.title = isCut ? "Cancel move" : "Cut — pick where to paste it, no dragging needed";
-  cutBtn.addEventListener("click", () => {
-    cutBlockId = isCut ? null : block.id;
-    renderBlocks(row.parentElement);
-  });
-  row.appendChild(cutBtn);
+  if (!readOnly) {
+    const cutBtn = document.createElement("button");
+    cutBtn.type = "button";
+    cutBtn.className = "block-cut";
+    const isCut = block.id === cutBlockId;
+    cutBtn.textContent = isCut ? "Cancel" : "Cut";
+    cutBtn.title = isCut ? "Cancel move" : "Cut — pick where to paste it, no dragging needed";
+    cutBtn.addEventListener("click", () => {
+      cutBlockId = isCut ? null : block.id;
+      renderBlocks(row.parentElement);
+    });
+    row.appendChild(cutBtn);
 
-  const removeBtn = document.createElement("button");
-  removeBtn.type = "button";
-  removeBtn.className = "block-remove";
-  removeBtn.textContent = "✕";
-  removeBtn.title = "Delete block";
-  removeBtn.addEventListener("click", () => {
-    if (!confirm("Delete this block?")) return;
-    state.removeBlock(block.id);
-    row.remove();
-  });
-  row.appendChild(removeBtn);
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "block-remove";
+    removeBtn.textContent = "✕";
+    removeBtn.title = "Delete block";
+    removeBtn.addEventListener("click", () => {
+      if (!confirm("Delete this block?")) return;
+      state.removeBlock(block.id);
+      row.remove();
+    });
+    row.appendChild(removeBtn);
 
-  wireDragAndDrop(row, handle);
+    wireDragAndDrop(row, handle);
+  }
 
   return row;
 }

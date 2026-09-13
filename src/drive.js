@@ -1,4 +1,4 @@
-import { GOOGLE_CLIENT_ID, DRIVE_SCOPES, DRIVE_FOLDER_NAME } from "./config.js";
+import { GOOGLE_CLIENT_ID, DRIVE_SCOPES, DRIVE_FOLDER_NAME, DRIVE_API_KEY } from "./config.js";
 
 // Thin wrapper around Google Identity Services (auth) + the Drive v3 REST
 // API (file CRUD), called directly via fetch so no gapi client is needed.
@@ -11,6 +11,16 @@ let tokenClient = null;
 let accessToken = null;
 let folderId = null;
 let signedInListeners = [];
+
+// The access token itself is never persisted (it's short-lived and GIS
+// gives no way to store/reuse one across a page load anyway) — only
+// whether the user had actively chosen Drive, so boot() knows whether it's
+// worth attempting a silent reauth at all.
+const WAS_SIGNED_IN_KEY = "engnb-drive-signed-in";
+
+export function wasSignedIn() {
+  return localStorage.getItem(WAS_SIGNED_IN_KEY) === "1";
+}
 
 export function onSignedInChange(fn) {
   signedInListeners.push(fn);
@@ -55,9 +65,49 @@ export function signIn() {
         return;
       }
       setToken(response.access_token);
+      localStorage.setItem(WAS_SIGNED_IN_KEY, "1");
       resolve(response);
     };
     tokenClient.requestAccessToken({ prompt: "" });
+  });
+}
+
+// Access tokens don't survive a page reload (GIS keeps them in memory
+// only), so boot() calls this to try reacquiring one without interrupting
+// the user. In practice, GIS still opens an actual popup window even with
+// prompt: "none" — called with no user gesture behind it (as boot() does),
+// the browser blocks that popup, and GIS's callback never fires at all in
+// that failure mode (it's a browser-level block, not a GIS-level auth
+// error it can report through the normal channel). Without the timeout
+// below, that leaves the returned promise hanging forever — which would
+// otherwise also block whatever awaits this call from ever reaching its
+// own fallback logic.
+export function trySilentSignIn() {
+  return new Promise((resolve) => {
+    if (!tokenClient) {
+      resolve(false);
+      return;
+    }
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      console.warn("Drive silent reauth timed out (likely a blocked popup — no user gesture at boot).");
+      resolve(false);
+    }, 3000);
+    tokenClient.callback = (response) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (response.error) {
+        console.warn("Drive silent reauth failed:", response.error, response.error_description || "");
+        resolve(false);
+        return;
+      }
+      setToken(response.access_token);
+      resolve(true);
+    };
+    tokenClient.requestAccessToken({ prompt: "none" });
   });
 }
 
@@ -67,6 +117,7 @@ export function signOut() {
   }
   setToken(null);
   folderId = null;
+  localStorage.removeItem(WAS_SIGNED_IN_KEY);
 }
 
 function authHeaders(extra = {}) {
@@ -84,6 +135,33 @@ async function driveFetch(path, options = {}) {
     throw new Error(`Drive API error ${res.status}: ${body}`);
   }
   return res;
+}
+
+// Grants "anyone with the link can view" on one file — needed before a
+// share link is usable at all, since drive.file-scoped files are private
+// to the app/owner by default. Idempotent: calling it again on an
+// already-shared file just re-applies the same permission.
+export async function shareFile(fileId) {
+  await driveFetch(`/files/${fileId}/permissions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role: "reader", type: "anyone" }),
+  });
+}
+
+// The read-only viewer path: a recipient opening a share link has no
+// Google sign-in at all (that's the point), so this can't use an OAuth
+// Bearer token like every other read in this file — it authenticates the
+// REQUEST with the project-level API key instead, relying on the file's
+// own "anyone with the link" permission (set by shareFile above) to allow
+// the read.
+export async function loadSheetContentPublic(fileId) {
+  const res = await fetch(`${DRIVE_API}/files/${fileId}?alt=media&key=${DRIVE_API_KEY}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Couldn't load shared sheet (${res.status}): ${body}`);
+  }
+  return res.json();
 }
 
 export async function ensureFolder() {

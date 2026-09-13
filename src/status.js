@@ -7,9 +7,10 @@ export function statusLabel(status) {
 }
 
 // Dropdown for the sheet header. Calls onChange(status) on selection.
-export function createStatusDropdown(currentStatus, onChange) {
+export function createStatusDropdown(currentStatus, onChange, { readOnly = false } = {}) {
   const select = document.createElement("select");
   select.className = `status-select status-${currentStatus}`;
+  select.disabled = readOnly;
   STATUSES.forEach((status) => {
     const opt = document.createElement("option");
     opt.value = status;

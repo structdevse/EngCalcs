@@ -8,9 +8,11 @@ let searchQuery = "";
 let activeTags = new Set();
 let els = null;
 let openCallback = null;
+let deleteCallback = null;
 
-export function initFileBrowser(container, { onOpenSheet }) {
+export function initFileBrowser(container, { onOpenSheet, onDeleteSheet }) {
   openCallback = onOpenSheet;
+  deleteCallback = onDeleteSheet;
 
   container.innerHTML = "";
 
@@ -150,6 +152,24 @@ function renderList() {
         t.innerHTML = highlightMatch(tag, searchQuery);
         tagsEl.appendChild(t);
       });
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "sidebar-item-delete";
+      deleteBtn.textContent = "×";
+      deleteBtn.title = "Delete this sheet";
+      deleteBtn.addEventListener("click", async (evt) => {
+        evt.stopPropagation(); // don't also open the sheet
+        if (!confirm(`Delete "${sheet.title}"? This can't be undone.`)) return;
+        try {
+          await storage.deleteSheet(sheet.id);
+          if (deleteCallback) deleteCallback(sheet.id);
+          refreshFileBrowser();
+        } catch (err) {
+          els.statusEl.textContent = `Failed to delete: ${err.message}`;
+        }
+      });
+      item.appendChild(deleteBtn);
 
       item.addEventListener("click", () => openCallback(sheet.id));
       els.listEl.appendChild(item);
