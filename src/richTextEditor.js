@@ -24,6 +24,13 @@ export function createRichTextEditor(block, onChange) {
 
   migrateLegacyMath(block);
   editor.innerHTML = block.content ? renderEditableHtml(block.content) : "";
+  // Deferred: a math-field needs to actually be connected to the document
+  // before its menuItems can be set (throws "Mathfield not mounted"
+  // otherwise), and `editor` itself isn't connected yet at this point —
+  // createRichTextEditor() only builds the element here, the caller
+  // (textBlock.js) appends it to the page afterward. One frame is enough
+  // for that append to have already happened.
+  requestAnimationFrame(() => disableMathFieldMenus(editor));
 
   // Enter creates a plain <br> line break rather than a browser-default
   // wrapper (a fresh <div> per line in Chrome) — much simpler to round-trip
@@ -156,8 +163,13 @@ export function createRichTextEditor(block, onChange) {
     }
     handleInput();
     // math-field manages its own internal focus/cursor — hand off to it
-    // once it's actually mounted and upgraded, not synchronously.
-    requestAnimationFrame(() => field.focus());
+    // once it's actually mounted and upgraded, not synchronously. Setting
+    // menuItems requires the element to already be connected to the DOM
+    // too, hence both happen in here rather than right after creation.
+    requestAnimationFrame(() => {
+      disableMathFieldMenu(field);
+      field.focus();
+    });
   }
 
   return {
@@ -193,6 +205,26 @@ function migrateLegacyMath(block) {
     );
   }
   block.mathFormat = "latex";
+}
+
+// MathLive's built-in menu button visually fills almost the entire field
+// while it's empty (or even once it has content, in the corner) — its
+// click target ends up covering the whole field, which both pops a Copy/
+// Select-All context menu on click AND swallows the click that would
+// otherwise place a text cursor there for typing. Disabling it fixes both:
+// a plain click focuses the field normally, the way typing into any other
+// field is expected to work.
+function disableMathFieldMenu(field) {
+  try {
+    field.menuItems = [];
+  } catch (e) {
+    // Not yet connected/upgraded — disableMathFieldMenus (plural, below)
+    // covers the load-time case where multiple fields exist at once.
+  }
+}
+
+function disableMathFieldMenus(root) {
+  root.querySelectorAll("math-field").forEach(disableMathFieldMenu);
 }
 
 function escapeMarkupChars(text) {
