@@ -311,6 +311,12 @@ function openMathPopup(initialLatex, onConfirm) {
   requestAnimationFrame(() => {
     try {
       field.menuItems = [];
+      // MathLive's on-screen virtual keyboard defaults to appearing
+      // automatically ("auto" policy) — its buttons don't reliably insert
+      // into the field in this popup's context, and real typing already
+      // works correctly (confirmed), so "manual" just keeps it from ever
+      // popping up rather than trying to fix a redundant input path.
+      field.mathVirtualKeyboardPolicy = "manual";
     } catch (e) {
       // ignore — cosmetic only, not worth failing the popup over
     }
