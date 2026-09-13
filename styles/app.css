@@ -770,6 +770,17 @@ select.status-select.status-superseded {
   resize: vertical;
 }
 
+/* This explicit display:block above otherwise beats the browser's own
+   [hidden] rule at equal specificity (whichever is declared later in the
+   stylesheet wins) — the exact bug this project hit once before with the
+   text-format-toolbar. Both this element and .rte-tooltip-popup-select
+   below get toggled via the hidden PROPERTY (mode === "link" / "text" in
+   richTextEditor.js's openTooltipPopup), so both need this override or
+   neither ever actually hides. */
+.rte-tooltip-popup-textarea[hidden] {
+  display: none;
+}
+
 .rte-tooltip-popup-second-label {
   margin-top: 0.75rem;
 }
@@ -835,6 +846,10 @@ select.status-select.status-superseded {
   border-radius: 6px;
   padding: 0.4rem 0.6rem;
   box-sizing: border-box;
+}
+
+.rte-tooltip-popup-select[hidden] {
+  display: none;
 }
 
 .rte-math-popup-buttons button.rte-tooltip-popup-unlink {
