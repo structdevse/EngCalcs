@@ -656,6 +656,128 @@ select.status-select.status-superseded {
   border-color: var(--border);
 }
 
+/* The WYSIWYG contenteditable surface (src/richTextEditor.js) — reuses
+   .text-block-input's box/type styling above via the same class, this just
+   adds what a textarea didn't need: a min-height so an empty block stays
+   clickable (a textarea always had this from its rows attribute; a div
+   collapses to its content, which can be nothing), a focus ring (an
+   editable div has no native :focus outline of its own the way a textarea
+   or input does), and a CSS-only placeholder for when it's empty. */
+.rte-live {
+  min-height: 2.5rem;
+}
+
+.rte-live:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.rte-live:empty::before {
+  content: "Type calculations here... use the \0003a3 Math button for equations";
+  color: var(--text-muted);
+  font-family: "Patrick Hand", cursive;
+  font-size: 1rem;
+  pointer-events: none;
+}
+
+/* A rendered equation in the editor — static (not directly editable in
+   place; see the comment at the top of richTextEditor.js for why),
+   double-click to reopen it in the math popup. The dashed outline is the
+   discoverability cue that it's clickable, since KaTeX's own rendering
+   gives no visual hint on its own. */
+.rte-live .rte-math {
+  margin: 0 0.15em;
+  padding: 0.1em 0.3em;
+  vertical-align: middle;
+  cursor: pointer;
+  border: 1px dashed transparent;
+  border-radius: 4px;
+}
+
+.rte-live .rte-math:hover {
+  border-color: var(--border);
+}
+
+.rte-live .rte-math[data-display="block"] {
+  display: block;
+  margin: 0.5em 0;
+}
+
+/* MathLive exposes this toggle as a styleable shadow part — hidden
+   outright rather than just kept from auto-opening (mathVirtualKeyboardPolicy
+   "manual" in richTextEditor.js), since its buttons don't reliably insert
+   into the field in this popup's context and real typing already works
+   correctly; better to remove the broken path than leave it clickable. */
+.rte-math-popup-field::part(virtual-keyboard-toggle) {
+  display: none;
+}
+
+/* Emptied via menuItems = [] in richTextEditor.js — hiding the now-inert
+   button too rather than leaving a click target that opens nothing. */
+.rte-math-popup-field::part(menu-toggle) {
+  display: none;
+}
+
+.rte-math-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.rte-math-popup {
+  background: var(--bg-page);
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 1.25rem;
+  min-width: 320px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
+.rte-math-popup-label {
+  font-family: "Patrick Hand", cursive;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.rte-math-popup-field {
+  display: block;
+  width: 100%;
+  min-height: 2.5rem;
+  font-size: 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem;
+  box-sizing: border-box;
+}
+
+.rte-math-popup-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.rte-math-popup-buttons button {
+  font-family: "Patrick Hand", cursive;
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-header);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.rte-math-popup-buttons button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
 .text-block-preview a {
   color: var(--accent);
   text-decoration: underline;

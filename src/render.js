@@ -22,6 +22,34 @@ function asciiMathToLatex(source) {
   }
 }
 
+// Backslash-escaping for the handful of characters that are otherwise
+// markup syntax (\* \_ \{ \} \[ \] \$ \\) — needed once prose can contain
+// them literally on purpose (e.g. "F = 2 * 3" in an engineering calc). Runs
+// as a strip/restore pass wrapped around the whole existing pipeline below,
+// rather than teaching every individual regex to skip escaped delimiters:
+// each \X is swapped for a Private-Use-Area placeholder character before
+// any parsing happens (so it can't match $ .. $, ** .. **, etc. at all),
+// then swapped back to the literal character in the final HTML output.
+const ESCAPE_PLACEHOLDER_BASE = 0xe000;
+
+function stripEscapes(source) {
+  const literals = [];
+  const escaped = String(source).replace(/\\([\\$*_{}[\]])/g, (_m, ch) => {
+    const token = String.fromCodePoint(ESCAPE_PLACEHOLDER_BASE + literals.length);
+    literals.push(ch);
+    return token;
+  });
+  return { escaped, literals };
+}
+
+function restoreEscapes(html, literals) {
+  if (literals.length === 0) return html;
+  return html.replace(/[-]/g, (ch) => {
+    const index = ch.codePointAt(0) - ESCAPE_PLACEHOLDER_BASE;
+    return literals[index] !== undefined ? literals[index] : ch;
+  });
+}
+
 // tooltipIndex is threaded through every applyInlineFormatting call within
 // one renderMathText invocation (there's one call per non-math segment), so
 // each rendered tooltip trigger gets a stable, source-order index baked in
@@ -30,31 +58,85 @@ function asciiMathToLatex(source) {
 // math spans are skipped entirely by both passes, so the indices line up —
 // which is how a double-click on a rendered trigger maps back to the exact
 // substring in block.content to edit.
-export function renderMathText(source) {
-  if (!window.katex) return applyInlineFormatting(escapeForHtml(source), { n: 0 });
+//
+// mathFormat is per-block, not per-span: "asciimath" (the default, and
+// every block ever saved before the WYSIWYG rich-text editor existed) runs
+// math source through asciiMathToLatex first; "latex" (written by the
+// MathLive-based editor, which speaks LaTeX natively) hands it to KaTeX
+// as-is. A block's format only ever changes by being re-saved through the
+// new editor, so old, untouched sheets keep rendering exactly as before.
+export function renderMathText(source, mathFormat = "asciimath") {
+  const { escaped, literals } = stripEscapes(source);
+  return restoreEscapes(renderMathTextInner(escaped, mathFormat, { n: 0, editable: false }), literals);
+}
+
+// The WYSIWYG rich-text editor's counterpart to renderMathText: same markup
+// parsing (same escape handling, same bold/italic/color/link passes), but
+// produces DOM the editor can mount directly instead of a static display —
+// math spans become live <math-field> elements instead of a KaTeX render,
+// and a tooltip trigger carries its content as a data-tooltip attribute
+// instead of a nested hover-reveal popup (there's nothing to "hover" while
+// editing; the popup markup is only meaningful for the read-only display).
+// Always treats mathSource as LaTeX regardless of the block's stored
+// mathFormat — the caller (richTextEditor.js) is responsible for
+// converting legacy AsciiMath to LaTeX once, at load time, via
+// asciiMathToLatexPublic below, since from this point on editing always
+// produces LaTeX.
+export function renderEditableHtml(source) {
+  const { escaped, literals } = stripEscapes(source);
+  return restoreEscapes(renderMathTextInner(escaped, "latex", { n: 0, editable: true }), literals);
+}
+
+// Exposed so richTextEditor.js can do the one-time AsciiMath→LaTeX
+// conversion when a legacy block is first opened in the new editor.
+export function asciiMathToLatexPublic(source) {
+  return asciiMathToLatex(source);
+}
+
+function renderMathTextInner(source, mathFormat, ctx) {
+  if (!window.katex) return applyInlineFormatting(escapeForHtml(source), ctx);
 
   const pattern = /\$\$([\s\S]+?)\$\$|\$([^\n$]+?)\$/g;
-  const tooltipIndex = { n: 0 };
   let result = "";
   let lastIndex = 0;
   let match;
 
   while ((match = pattern.exec(source)) !== null) {
-    result += applyInlineFormatting(escapeForHtml(source.slice(lastIndex, match.index)), tooltipIndex);
+    result += applyInlineFormatting(escapeForHtml(source.slice(lastIndex, match.index)), ctx);
     const display = match[1] !== undefined;
-    const asciiMath = display ? match[1] : match[2];
+    const mathSource = display ? match[1] : match[2];
+    // editable mode always treats mathSource as LaTeX (see the comment on
+    // renderEditableHtml below); read-only mode still respects the block's
+    // own stored mathFormat.
+    const latex = ctx.editable || mathFormat === "latex" ? mathSource : asciiMathToLatex(mathSource);
     try {
-      result += window.katex.renderToString(asciiMathToLatex(asciiMath), {
-        throwOnError: false,
-        displayMode: display,
-      });
+      const rendered = window.katex.renderToString(latex, { throwOnError: false, displayMode: display });
+      result += ctx.editable ? editableMathTag(rendered, latex, display) : rendered;
     } catch (e) {
       result += escapeForHtml(match[0]);
     }
     lastIndex = pattern.lastIndex;
   }
-  result += applyInlineFormatting(escapeForHtml(source.slice(lastIndex)), tooltipIndex);
+  result += applyInlineFormatting(escapeForHtml(source.slice(lastIndex)), ctx);
   return result;
+}
+
+// A math span in the editor renders live (via KaTeX, same as the read-only
+// view) rather than as an editable MathLive <math-field> the way an
+// earlier version of this did — MathLive's keyboard capture turns out not
+// to work at all when nested inside a native contenteditable ancestor
+// (confirmed: a standalone field works, this exact field embedded here
+// does not — a documented MathLive/contenteditable incompatibility, not a
+// bug fixable with a quick patch). Clicking it instead opens an isolated
+// math-field in a popup (richTextEditor.js's openMathPopup, mounted
+// outside the contenteditable tree, where MathLive works correctly) to
+// edit the LaTeX, then re-renders this same static display on confirm.
+function editableMathTag(renderedHtml, latex, display) {
+  const safeLatex = latex.replace(/"/g, "&quot;").replace(/\n/g, "&#10;");
+  return (
+    `<span class="rte-math" data-latex="${safeLatex}" data-display="${display ? "block" : "inline"}" ` +
+    `contenteditable="false" tabindex="0">${renderedHtml}</span>`
+  );
 }
 
 // Finds every [trigger]{tooltip} occurrence directly in the raw, unrendered
@@ -85,7 +167,7 @@ function escapeForHtml(str) {
 // of what a user types, since color names are matched against a fixed list
 // rather than interpolated freely. The `s` flag lets a formatted span cross
 // what were originally line breaks (now literal <br> in the escaped text).
-function applyInlineFormatting(escapedText, tooltipIndex) {
+function applyInlineFormatting(escapedText, ctx) {
   let html = escapedText;
   html = html.replace(/\*\*(.+?)\*\*/gs, "<strong>$1</strong>");
   html = html.replace(/__(.+?)__/gs, "<u>$1</u>");
@@ -106,7 +188,7 @@ function applyInlineFormatting(escapedText, tooltipIndex) {
     /\[([^\]]+)\](?:\((https?:\/\/[^\s)]+)\)|\{([^}]+)\})/g,
     (_m, text, url, tooltip) => {
       const token = `SPECIAL${specials.length}`;
-      specials.push(url !== undefined ? linkTag(url, text) : tooltipTag(text, tooltip, tooltipIndex));
+      specials.push(url !== undefined ? linkTag(url, text) : tooltipTag(text, tooltip, ctx));
       return token;
     }
   );
@@ -138,9 +220,25 @@ function linkTag(url, text) {
 // underline/color inside a tooltip already work with no extra handling:
 // those passes already ran on the whole string before this one, since they
 // don't know or care about [] / {} boundaries.
-function tooltipTag(triggerText, tooltipRawContent, tooltipIndex) {
-  const index = tooltipIndex.n++;
-  const tooltipHtml = applyInlineFormatting(tooltipRawContent, tooltipIndex);
+//
+// In editable mode, the tooltip's raw content is stashed in data-tooltip
+// (HTML-attribute-escaped, so quotes/newlines in the tooltip text can't
+// break out of the attribute) rather than rendered into a nested popup —
+// there's no hover in an editor, and richTextEditor.js's serializer reads
+// this attribute straight back out rather than walking rendered HTML.
+function tooltipTag(triggerText, tooltipRawContent, ctx) {
+  if (ctx.editable) {
+    const safeTooltip = String(tooltipRawContent)
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/\n/g, "&#10;");
+    return (
+      `<span class="text-tooltip-trigger" tabindex="0" data-tooltip="${safeTooltip}" ` +
+      `title="${safeTooltip}" contenteditable="false">${triggerText}</span>`
+    );
+  }
+  const index = ctx.n++;
+  const tooltipHtml = applyInlineFormatting(tooltipRawContent, ctx);
   return (
     `<span class="text-tooltip-trigger" tabindex="0" data-tooltip-index="${index}">${triggerText}` +
     `<span class="text-tooltip-popup">${tooltipHtml}</span></span>`
