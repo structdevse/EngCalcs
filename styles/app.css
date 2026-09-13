@@ -755,6 +755,30 @@ select.status-select.status-superseded {
   box-sizing: border-box;
 }
 
+.rte-tooltip-popup-input,
+.rte-tooltip-popup-textarea {
+  display: block;
+  width: 100%;
+  font-family: "Patrick Hand", cursive;
+  font-size: 1rem;
+  color: var(--ink);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.rte-tooltip-popup-second-label {
+  margin-top: 0.75rem;
+}
+
+.rte-math-popup:has(.rte-tooltip-popup-textarea) {
+  min-width: 380px;
+  max-width: 480px;
+}
+
 .rte-math-popup-buttons {
   display: flex;
   justify-content: flex-end;

@@ -115,29 +115,36 @@ export function createRichTextEditor(block, onChange) {
   }
 
   function insertTooltip() {
-    if (window.getSelection().isCollapsed) {
+    const sel = window.getSelection();
+    if (sel.isCollapsed) {
       alert("Select some text first to attach a tooltip to it.");
       return;
     }
-    const tip = prompt('Tooltip text (can include a URL, e.g. "See https://...")', "");
-    if (!tip) return;
-    focusEditor();
-    wrapSelection(() => {
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return;
+    const savedRange = range.cloneRange();
+    const selectedText = savedRange.toString();
+    openTooltipPopup(selectedText, "", (triggerText, tooltipText) => {
       const span = document.createElement("span");
       span.className = "text-tooltip-trigger";
       span.tabIndex = 0;
       span.contentEditable = "false";
-      span.dataset.tooltip = tip;
-      span.title = tip;
-      return span;
+      span.dataset.tooltip = tooltipText;
+      span.title = tooltipText;
+      span.textContent = triggerText;
+      savedRange.deleteContents();
+      savedRange.insertNode(span);
+      handleInput();
+      focusEditor();
     });
   }
 
-  // Double-clicking an existing tooltip re-prompts for both its trigger
-  // text and tooltip content — the trigger itself is contenteditable=false
-  // (a single atomic unit, not inline-editable character-by-character),
-  // so this is the only way to change one after it's created. Double-
-  // clicking an equation reopens it in the math popup, pre-filled.
+  // Double-clicking an existing tooltip reopens it in the tooltip popup,
+  // pre-filled with both its trigger text and tooltip content — the
+  // trigger itself is contenteditable=false (a single atomic unit, not
+  // inline-editable character-by-character), so this is the only way to
+  // change one after it's created. Double-clicking an equation reopens it
+  // in the math popup the same way.
   editor.addEventListener("dblclick", (evt) => {
     const mathSpan = evt.target.closest(".rte-math");
     if (mathSpan) {
@@ -152,14 +159,12 @@ export function createRichTextEditor(block, onChange) {
     const trigger = evt.target.closest(".text-tooltip-trigger");
     if (!trigger) return;
     evt.preventDefault();
-    const newTriggerText = prompt("Trigger text", trigger.textContent);
-    if (newTriggerText === null) return;
-    const newTooltip = prompt("Tooltip text", trigger.dataset.tooltip || "");
-    if (newTooltip === null) return;
-    trigger.textContent = newTriggerText || trigger.textContent;
-    trigger.dataset.tooltip = newTooltip;
-    trigger.title = newTooltip;
-    handleInput();
+    openTooltipPopup(trigger.textContent, trigger.dataset.tooltip || "", (triggerText, tooltipText) => {
+      trigger.textContent = triggerText;
+      trigger.dataset.tooltip = tooltipText;
+      trigger.title = tooltipText;
+      handleInput();
+    });
   });
 
   function insertMath() {
@@ -323,6 +328,90 @@ function openMathPopup(initialLatex, onConfirm) {
     if (initialLatex) field.value = initialLatex;
     field.focus();
   });
+}
+
+// A popup for creating/editing a tooltip's trigger text and tooltip
+// content — replaces two sequential prompt() calls, whose single-line
+// inputs visually truncate anything longer than the dialog's width with no
+// way to see the rest without it (the underlying value was always
+// complete; the native dialog just couldn't display it). A real textarea
+// here shows and wraps the full text properly. onConfirm(triggerText,
+// tooltipText) fires only if both fields end up non-empty; Cancel/Escape/
+// clicking the backdrop all just close it with no callback.
+function openTooltipPopup(initialTrigger, initialTooltip, onConfirm) {
+  const overlay = document.createElement("div");
+  overlay.className = "rte-math-popup-overlay";
+
+  const box = document.createElement("div");
+  box.className = "rte-math-popup";
+  overlay.appendChild(box);
+
+  const triggerLabel = document.createElement("div");
+  triggerLabel.className = "rte-math-popup-label";
+  triggerLabel.textContent = "Trigger text:";
+  box.appendChild(triggerLabel);
+
+  const triggerInput = document.createElement("input");
+  triggerInput.type = "text";
+  triggerInput.className = "rte-tooltip-popup-input";
+  triggerInput.value = initialTrigger;
+  box.appendChild(triggerInput);
+
+  const tooltipLabel = document.createElement("div");
+  tooltipLabel.className = "rte-math-popup-label rte-tooltip-popup-second-label";
+  tooltipLabel.textContent = "Tooltip text (can include a URL):";
+  box.appendChild(tooltipLabel);
+
+  const tooltipInput = document.createElement("textarea");
+  tooltipInput.className = "rte-tooltip-popup-textarea";
+  tooltipInput.rows = 4;
+  tooltipInput.value = initialTooltip;
+  box.appendChild(tooltipInput);
+
+  const buttonRow = document.createElement("div");
+  buttonRow.className = "rte-math-popup-buttons";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.textContent = "Cancel";
+  const confirmBtn = document.createElement("button");
+  confirmBtn.type = "button";
+  confirmBtn.className = "primary";
+  confirmBtn.textContent = initialTooltip ? "Update" : "Insert";
+  buttonRow.appendChild(cancelBtn);
+  buttonRow.appendChild(confirmBtn);
+  box.appendChild(buttonRow);
+
+  function close() {
+    overlay.remove();
+  }
+
+  cancelBtn.addEventListener("click", close);
+  overlay.addEventListener("mousedown", (evt) => {
+    if (evt.target === overlay) close();
+  });
+  confirmBtn.addEventListener("click", () => {
+    const triggerText = triggerInput.value.trim();
+    const tooltipText = tooltipInput.value.trim();
+    close();
+    if (triggerText && tooltipText) onConfirm(triggerText, tooltipText);
+  });
+  // Escape cancels from either field; Enter in the (single-line) trigger
+  // field just moves to the tooltip textarea rather than submitting, since
+  // Enter inside the textarea itself needs to insert a real newline.
+  triggerInput.addEventListener("keydown", (evt) => {
+    if (evt.key === "Escape") {
+      close();
+    } else if (evt.key === "Enter") {
+      evt.preventDefault();
+      tooltipInput.focus();
+    }
+  });
+  tooltipInput.addEventListener("keydown", (evt) => {
+    if (evt.key === "Escape") close();
+  });
+
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => triggerInput.focus());
 }
 
 function escapeMarkupChars(text) {
